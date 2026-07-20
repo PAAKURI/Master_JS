@@ -2,10 +2,77 @@
 
 [ext_resource type="Texture2D" uid="uid://dqw6r3a8w26pi" path="res://resources/map1.png" id="1_f6udf"]
 [ext_resource type="Texture2D" uid="uid://bou14gmrm2i3q" path="res://icon.svg" id="2_sblpm"]
+[ext_resource type="Script" path="res://Player.cs" id="3_player"]
+[ext_resource type="Script" path="res://CameraShake.cs" id="4_camera"]
+[ext_resource type="Script" path="res://DamageOverlay.cs" id="5_damage_overlay"]
+
+[sub_resource type="Shader" id="Shader_damage_edges"]
+code = "shader_type canvas_item;
+
+void fragment() {
+	float edge = min(min(UV.x, 1.0 - UV.x), min(UV.y, 1.0 - UV.y));
+	float alpha = 1.0 - smoothstep(0.0, 0.12, edge);
+	COLOR = vec4(0.8, 0.0, 0.0, alpha * 0.55);
+}
+"
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_damage_edges"]
+shader = SubResource("Shader_damage_edges")
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_player"]
+radius = 32.0
+height = 96.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_health_background"]
+bg_color = Color(0, 0, 0, 0.35)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_health_fill"]
+bg_color = Color(1, 1, 1, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
 
 [node name="Node2D" type="Node2D" unique_id=2126846963]
 
+[node name="Camera2D" type="Camera2D" parent="." unique_id=468511795 groups=["camera_shake"]]
+position = Vector2(960, 540)
+script = ExtResource("4_camera")
+
+[node name="DamageOverlayLayer" type="CanvasLayer" parent="." unique_id=232449306]
+layer = 10
+
+[node name="DamageOverlay" type="Control" parent="DamageOverlayLayer" unique_id=1993408456 groups=["damage_overlay"]]
+modulate = Color(1, 1, 1, 0)
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("5_damage_overlay")
+
+[node name="Edges" type="ColorRect" parent="DamageOverlayLayer/DamageOverlay" unique_id=382867558]
+material = SubResource("ShaderMaterial_damage_edges")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 5.0
+offset_top = 43.0
+offset_right = 5.0
+offset_bottom = 43.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
 [node name="StaticBody2D" type="StaticBody2D" parent="." unique_id=1220258757]
+position = Vector2(0, 100)
 collision_mask = 0
 
 [node name="Map1" type="Sprite2D" parent="StaticBody2D" unique_id=910685051]
@@ -19,11 +86,39 @@ scale = Vector2(0.4, 0.4)
 polygon = PackedVector2Array(-468, -999, -623.80005, -843, -626, -843, -626, -837.2, -560, -772.2, -560, -438.90002, -1134.7, 83.80005, -2200.7, -844.4, -2201, 999, 2201, 999, 2201, -843.3, 2198.7002, -844.4, 1133.3, 85, 558.80005, -440, 558, -440, 558, -771.2, 625, -837.2, 625, -841.8, 467, -998.9, 455.19995, -999, 300.19995, -843, 298, -843, 298, -837.2, 363, -773.2, 363, -403.90002, -1.6000977, -73.29999, -365, -404.90002, -365, -772.2, -299, -837.2, -299, -841.8, -457, -998.9)
 
 [node name="CharacterBody2D" type="CharacterBody2D" parent="." unique_id=402947140]
+position = Vector2(624, 90)
 collision_layer = 2
+script = ExtResource("3_player")
 
 [node name="Player" type="Sprite2D" parent="CharacterBody2D" unique_id=2069689223]
-position = Vector2(624, 90)
-scale = Vector2(1.0577217, 1.0055496)
+scale = Vector2(0.75, 0.75)
 texture = ExtResource("2_sblpm")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="CharacterBody2D" unique_id=1868771392]
+shape = SubResource("CapsuleShape2D_player")
+
+[node name="HealthBar" type="ProgressBar" parent="CharacterBody2D" unique_id=1262435746]
+offset_left = -50.0
+offset_top = -82.0
+offset_right = 50.0
+offset_bottom = -70.0
+mouse_filter = 2
+theme_override_styles/background = SubResource("StyleBoxFlat_health_background")
+theme_override_styles/fill = SubResource("StyleBoxFlat_health_fill")
+value = 100.0
+show_percentage = false
+
+[node name="ParryArea" type="Area2D" parent="CharacterBody2D" unique_id=1891866385]
+collision_layer = 0
+collision_mask = 4
+monitoring = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="CharacterBody2D/ParryArea" unique_id=863441789]
+scale = Vector2(1.2, 1.2)
+shape = SubResource("CapsuleShape2D_player")
+disabled = true
+
+[node name="Visual" type="Polygon2D" parent="CharacterBody2D/ParryArea" unique_id=312548294]
+visible = false
+color = Color(0.3, 0.9, 1, 0.3)
+polygon = PackedVector2Array(-32, -48, 32, -48, 32, 48, -32, 48)

@@ -1,29 +1,27 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene format=3 uid="uid://vtohqldyiah4"]
 
-[ext_resource type="Script" path="res://Bullet.cs" id="1_bullet"]
-
-[sub_resource type="CircleShape2D" id="CircleShape2D_bullet"]
-radius = 8.0
+[ext_resource type="Script" uid="uid://dy3o4xoxtftwf" path="res://Bullet.cs" id="1_bullet"]
 
 [sub_resource type="Curve" id="Curve_trail_width"]
 _data = [Vector2(0, 0.05), 0.0, 0.0, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
 point_count = 2
 
 [sub_resource type="Gradient" id="Gradient_trail_fade"]
-offsets = PackedFloat32Array(0, 1)
 colors = PackedColorArray(1, 0.55, 0.15, 0.05, 1, 0.55, 0.15, 0.8)
 
-[node name="Bullet" type="RigidBody2D"]
+[sub_resource type="CircleShape2D" id="CircleShape2D_bullet"]
+radius = 8.0
+
+[node name="Bullet" type="RigidBody2D" unique_id=421353844]
 collision_layer = 4
 collision_mask = 3
-gravity_scale = 1.0
+lock_rotation = true
+continuous_cd = 2
 contact_monitor = true
 max_contacts_reported = 1
-continuous_cd = 2
-lock_rotation = true
 script = ExtResource("1_bullet")
 
-[node name="Trail" type="Line2D" parent="."]
+[node name="Trail" type="Line2D" parent="." unique_id=497199993]
 top_level = true
 width = 6.0
 width_curve = SubResource("Curve_trail_width")
@@ -32,9 +30,9 @@ joint_mode = 1
 begin_cap_mode = 2
 end_cap_mode = 2
 
-[node name="Visual" type="Polygon2D" parent="."]
-polygon = PackedVector2Array(8, 0, 5.66, 5.66, 0, 8, -5.66, 5.66, -8, 0, -5.66, -5.66, 0, -8, 5.66, -5.66)
+[node name="Visual" type="Polygon2D" parent="." unique_id=587960785]
 color = Color(1, 0.85, 0.25, 1)
+polygon = PackedVector2Array(8, 0, 5.66, 5.66, 0, 8, -5.66, 5.66, -8, 0, -5.66, -5.66, 0, -8, 5.66, -5.66)
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1637276889]
 shape = SubResource("CircleShape2D_bullet")

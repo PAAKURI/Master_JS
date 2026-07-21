@@ -2,6 +2,7 @@ using Godot;
 
 public partial class GameOverPanel : Control
 {
+	public event System.Action? RestartRequested;
 	private Button _restartButton = null!;
 	private Label _title = null!;
 	private Label _score = null!;
@@ -11,7 +12,7 @@ public partial class GameOverPanel : Control
 		_restartButton = GetNode<Button>("Panel/Content/RestartButton");
 		_title = GetNode<Label>("Panel/Content/Title");
 		_score = GetNode<Label>("Panel/Content/Score");
-		_restartButton.Pressed += () => GetTree().ReloadCurrentScene();
+		_restartButton.Pressed += () => RestartRequested?.Invoke();
 		GetNode<Button>("Panel/Content/TitleButton").Pressed +=
 			() => GetTree().ChangeSceneToFile("res://Scene/start.tscn");
 		GetNode<Button>("Panel/Content/QuitButton").Pressed += () => GetTree().Quit();
@@ -21,6 +22,7 @@ public partial class GameOverPanel : Control
 	{
 		_title.Text = $"PLAYER {winnerId} WINS";
 		_score.Text = $"{playerOneWins}  :  {playerTwoWins}";
+		_restartButton.Disabled = NetworkSession.Instance.IsClient;
 		Show();
 		_restartButton.GrabFocus();
 	}

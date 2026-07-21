@@ -17,7 +17,7 @@ public partial class GameOverPanel : Control
 		GetNode<Button>("Panel/Content/QuitButton").Pressed += () => GetTree().Quit();
 	}
 
-	public void ShowResult(int winnerId, int playerOneWins, int playerTwoWins)
+	public void ShowResult(int winnerId,  int playerOneWins, int playerTwoWins)
 	{
 		_title.Text = $"PLAYER {winnerId} WINS";
 		_score.Text = $"{playerOneWins}  :  {playerTwoWins}";

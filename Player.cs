@@ -104,7 +104,6 @@ public partial class Player : CharacterBody2D
         TickTimers(delta);
         UpdateParry(delta);
         UpdateAim();
-        UpdateVisuals();
 
         if (!InputEnabled || !IsAlive)
         {
@@ -326,12 +325,6 @@ public partial class Player : CharacterBody2D
         var aim = targetPosition - GlobalPosition;
         if (aim.LengthSquared() > 1.0f)
             AimDirection = aim.Normalized();
-    }
-
-    private void UpdateVisuals()
-    {
-        _parryArea.Rotation = AimDirection.Angle();
-        _parryArea.Position = AimDirection * 54.0f;
     }
 
     private void UpdateLegs(float delta)

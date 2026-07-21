@@ -3,169 +3,374 @@ using Godot;
 
 public partial class Player : CharacterBody2D
 {
+    [Signal] public delegate void DiedEventHandler(int playerId);
+
     private static readonly PackedScene BulletScene = GD.Load<PackedScene>("res://Scene/bullet.tscn");
 
     private const float Speed = 400.0f;
+    private const float CrouchSpeed = 120.0f;
     private const float JumpVelocity = -700.0f;
     private const float FastFallSpeed = 1100.0f;
+    private const float WallClimbSpeed = 135.0f;
+    private const float WallSlideSpeed = 170.0f;
     private const float WallJumpSpeed = 550.0f;
     private const float WallJumpLockDuration = 0.15f;
+    private const float CoyoteDuration = 0.1f;
+    private const float JumpBufferDuration = 0.1f;
     private const float BulletSpeed = 1100.0f;
-    private const float MuzzleDistance = 60.0f;
+    private const float MuzzleDistance = 58.0f;
     private const float ShootInterval = 0.7f;
-    private const int MaxHealth = 100;
+    private const float ReloadDuration = 3.0f;
+    private const float RecoilStrength = 145.0f;
     private const float HitInvulnerability = 0.15f;
     private const float ParryStartup = 0.05f;
     private const float ParryActive = 0.15f;
     private const float ParryRecovery = 0.25f;
-    private const float ParryCooldown = 0.8f;
+    private const float ParryCooldownDuration = 0.8f;
+    private const int MaxHealth = 100;
+    private const int MagazineSize = 4;
 
     private enum ParryState { Idle, Startup, Active, Recovery }
 
-    private float _wallJumpLock;
-    private bool _airJumpAvailable = true;
-    private float _shootCooldown;
-    private int _health = MaxHealth;
-    private bool _invulnerable;
-    private ParryState _parryState;
-    private float _parryTime;
-    private float _parryCooldown;
+    [Export] public int PlayerId { get; set; } = 1;
+    [Export] public bool IsBot { get; set; }
+    [Export] public Color PlayerColor { get; set; } = new(0.2f, 0.65f, 1.0f);
 
-    private ProgressBar _healthBar = null!;
+    public int Health { get; private set; } = MaxHealth;
+    public int Ammo { get; private set; } = MagazineSize;
+    public bool IsReloading => _reloadTime > 0.0f;
+    public float ReloadProgress => IsReloading ? 1.0f - _reloadTime / ReloadDuration : 0.0f;
+    public float ParryCooldownRatio => _parryCooldown / ParryCooldownDuration;
+    public bool IsAlive { get; private set; } = true;
+    public bool InputEnabled { get; set; }
+    public bool CombatEnabled { get; set; }
+    public Vector2 AimDirection { get; private set; } = Vector2.Right;
+
+    private float _wallJumpLock;
+    private float _coyoteTime;
+    private float _jumpBuffer;
+    private float _shootCooldown;
+    private float _reloadTime;
+    private float _invulnerabilityTime;
+    private float _parryCooldown;
+    private float _parryTime;
+    private float _botShootDelay;
+    private float _botParryDelay;
+    private float _botJumpDelay;
+    private ParryState _parryState;
+    private Player? _target;
+
+    private CollisionShape2D _bodyCollision = null!;
     private Area2D _parryArea = null!;
     private CollisionShape2D _parryCollision = null!;
     private Polygon2D _parryVisual = null!;
-    private Sprite2D _playerSprite = null!;
+    private Polygon2D _bodyVisual = null!;
+    private Polygon2D _gunVisual = null!;
+    private ProgressBar _healthBar = null!;
 
     public override void _Ready()
     {
-        _healthBar = GetNode<ProgressBar>("HealthBar");
+        AddToGroup("players");
+        _bodyCollision = GetNode<CollisionShape2D>("CollisionShape2D");
         _parryArea = GetNode<Area2D>("ParryArea");
         _parryCollision = GetNode<CollisionShape2D>("ParryArea/CollisionShape2D");
         _parryVisual = GetNode<Polygon2D>("ParryArea/Visual");
-        _playerSprite = GetNode<Sprite2D>("Player");
+        _bodyVisual = GetNode<Polygon2D>("BodyVisual");
+        _gunVisual = GetNode<Polygon2D>("GunVisual");
+        _healthBar = GetNode<ProgressBar>("HealthBar");
+        _bodyVisual.Color = PlayerColor;
+        _healthBar.Value = Health;
         _parryArea.BodyEntered += OnParryBodyEntered;
+        _botShootDelay = (float)GD.RandRange(0.5, 1.2);
     }
 
     public override void _PhysicsProcess(double deltaValue)
     {
         var delta = (float)deltaValue;
-        var direction = Input.GetAxis("move_left", "move_right");
-        _wallJumpLock = Mathf.Max(_wallJumpLock - delta, 0.0f);
-        _shootCooldown = Mathf.Max(_shootCooldown - delta, 0.0f);
-        _parryCooldown = Mathf.Max(_parryCooldown - delta, 0.0f);
+        TickTimers(delta);
         UpdateParry(delta);
+        UpdateAim();
+        UpdateVisuals();
 
-        if (Input.IsActionJustPressed("parry") && _parryCooldown == 0.0f)
-        {
-            _parryState = ParryState.Startup;
-            _parryTime = ParryStartup;
-            _parryCooldown = ParryCooldown;
-        }
-
-        if (Input.IsMouseButtonPressed(MouseButton.Left) && _shootCooldown == 0.0f && _parryState != ParryState.Active)
-            Shoot();
-
-        if (_wallJumpLock == 0.0f)
-            Velocity = new Vector2(direction * Speed, Velocity.Y);
-
-        if (!IsOnFloor())
+        if (!InputEnabled || !IsAlive)
         {
             Velocity += GetGravity() * delta;
-            if (IsOnWall() && direction * GetWallNormal().X < 0.0f)
+            MoveAndSlide();
+            return;
+        }
+
+        float direction;
+        bool jumpPressed;
+        bool downPressed;
+        bool upPressed;
+        bool shootPressed;
+        bool parryPressed;
+        ReadActions(delta, out direction, out jumpPressed, out downPressed, out upPressed, out shootPressed, out parryPressed);
+
+        if (jumpPressed)
+            _jumpBuffer = JumpBufferDuration;
+        if (parryPressed)
+            StartParry();
+        if (shootPressed)
+            TryShoot();
+
+        var crouching = IsOnFloor() && downPressed;
+        _bodyCollision.Scale = new Vector2(1.0f, crouching ? 0.62f : 1.0f);
+        _bodyCollision.Position = new Vector2(0.0f, crouching ? 16.7f : 0.0f);
+        _bodyVisual.Scale = new Vector2(1.0f, crouching ? 0.62f : 1.0f);
+        _bodyVisual.Position = new Vector2(0.0f, crouching ? 16.7f : 0.0f);
+
+        if (IsOnFloor())
+            _coyoteTime = CoyoteDuration;
+
+        var attachedToWall = !IsOnFloor() && IsOnWall() && direction * GetWallNormal().X < 0.0f;
+        if (_wallJumpLock <= 0.0f)
+            Velocity = new Vector2(direction * (crouching ? CrouchSpeed : Speed), Velocity.Y);
+
+        if (attachedToWall)
+        {
+            if (_jumpBuffer > 0.0f)
             {
-                if (Input.IsActionJustPressed("jump"))
-                {
-                    Velocity = new Vector2(GetWallNormal().X * WallJumpSpeed, JumpVelocity);
-                    _wallJumpLock = WallJumpLockDuration;
-                }
-                else
-                {
-                    Velocity = new Vector2(Velocity.X, 0.0f);
-                }
+                Velocity = new Vector2(GetWallNormal().X * WallJumpSpeed, JumpVelocity);
+                _wallJumpLock = WallJumpLockDuration;
+                _jumpBuffer = 0.0f;
             }
-            else if (Input.IsActionJustPressed("jump") && _airJumpAvailable)
+            else
             {
-                Velocity = new Vector2(Velocity.X, JumpVelocity);
-                _airJumpAvailable = false;
-            }
-            else if (Input.IsActionPressed("move_down"))
-            {
-                Velocity = new Vector2(Velocity.X, Mathf.Max(Velocity.Y, FastFallSpeed));
+                var wallVelocity = upPressed ? -WallClimbSpeed : downPressed ? WallClimbSpeed : WallSlideSpeed;
+                Velocity = new Vector2(Velocity.X, wallVelocity);
             }
         }
         else
         {
-            _airJumpAvailable = true;
-            if (Input.IsActionJustPressed("jump"))
+            if (!IsOnFloor())
+                Velocity += GetGravity() * delta;
+            if (_jumpBuffer > 0.0f && _coyoteTime > 0.0f)
+            {
                 Velocity = new Vector2(Velocity.X, JumpVelocity);
+                _jumpBuffer = 0.0f;
+                _coyoteTime = 0.0f;
+            }
+            else if (!IsOnFloor() && downPressed)
+            {
+                Velocity = new Vector2(Velocity.X, Mathf.Max(Velocity.Y, FastFallSpeed));
+            }
         }
 
         MoveAndSlide();
     }
 
-    private void Shoot()
-    {
-        var mousePosition = GetGlobalMousePosition();
-        if (mousePosition == GlobalPosition)
-            return;
+    public void SetTarget(Player target) => _target = target;
 
-        var aim = Vector2.FromAngle(GlobalPosition.AngleToPoint(mousePosition));
-        var bullet = BulletScene.Instantiate<Bullet>();
-        GetTree().CurrentScene.AddChild(bullet);
-        bullet.SetOwnerPlayer(this);
-        bullet.GlobalPosition = GlobalPosition + aim * MuzzleDistance;
-        var displacement = mousePosition - bullet.GlobalPosition;
-        var travelTime = Mathf.Max(displacement.Length() / BulletSpeed, 0.01f);
-        bullet.LinearVelocity = displacement / travelTime - GetGravity() * travelTime * 0.5f;
-        _shootCooldown = ShootInterval;
+    public void ResetForRound(Vector2 spawnPosition)
+    {
+        GlobalPosition = spawnPosition;
+        Velocity = Vector2.Zero;
+        Health = MaxHealth;
+        Ammo = MagazineSize;
+        IsAlive = true;
+        InputEnabled = false;
+        CombatEnabled = false;
+        _shootCooldown = 0.0f;
+        _reloadTime = 0.0f;
+        _invulnerabilityTime = 0.0f;
+        _parryCooldown = 0.0f;
+        _parryState = ParryState.Idle;
+        SetParryActive(false);
+        _bodyCollision.Scale = Vector2.One;
+        _bodyCollision.Position = Vector2.Zero;
+        _bodyVisual.Scale = Vector2.One;
+        _bodyVisual.Position = Vector2.Zero;
+        _healthBar.Value = Health;
+        SetPhysicsProcess(true);
     }
 
-    public void TakeDamage(int amount)
+    public void Kill()
     {
-        if (_invulnerable || _health <= 0)
+        if (!IsAlive)
             return;
+        IsAlive = false;
+        InputEnabled = false;
+        EmitSignal(SignalName.Died, PlayerId);
+    }
 
-        _health = Math.Max(_health - amount, 0);
-        _healthBar.Value = _health;
+    public bool TakeHit(int amount, Vector2 bulletVelocity)
+    {
+        if (!CombatEnabled || !IsAlive || _invulnerabilityTime > 0.0f)
+            return false;
+
+        Health = Math.Max(Health - amount, 0);
+        _healthBar.Value = Health;
+        _invulnerabilityTime = HitInvulnerability;
+        var knockbackDirection = bulletVelocity.LengthSquared() > 0.01f ? bulletVelocity.Normalized() : Vector2.Up;
+        Velocity += knockbackDirection * 430.0f + Vector2.Up * 120.0f;
         GetTree().CallGroup("camera_shake", "shake", 10.0f, 0.18f);
-        GetTree().CallGroup("damage_overlay", "show_damage");
-        if (_health == 0)
+        GetTree().CallGroup("damage_overlay", "show_damage", PlayerId);
+        _bodyVisual.Modulate = Colors.White;
+        CreateTween().TweenProperty(_bodyVisual, "modulate", PlayerColor, HitInvulnerability);
+        if (Health <= 0)
+            Kill();
+        return true;
+    }
+
+    public bool TryParry(Bullet bullet, Vector2 incomingVelocity)
+    {
+        if (!IsAlive || _parryState != ParryState.Active)
+            return false;
+        if (!bullet.Parry(this, incomingVelocity))
+            return false;
+
+        GetTree().CallGroup("camera_shake", "shake", 7.0f, 0.12f);
+        _bodyVisual.Modulate = new Color(0.6f, 1.0f, 1.0f);
+        CreateTween().TweenProperty(_bodyVisual, "modulate", PlayerColor, 0.15);
+        return true;
+    }
+
+    private void TickTimers(float delta)
+    {
+        _wallJumpLock = Mathf.Max(_wallJumpLock - delta, 0.0f);
+        _coyoteTime = Mathf.Max(_coyoteTime - delta, 0.0f);
+        _jumpBuffer = Mathf.Max(_jumpBuffer - delta, 0.0f);
+        _shootCooldown = Mathf.Max(_shootCooldown - delta, 0.0f);
+        _invulnerabilityTime = Mathf.Max(_invulnerabilityTime - delta, 0.0f);
+        _parryCooldown = Mathf.Max(_parryCooldown - delta, 0.0f);
+        if (_reloadTime <= 0.0f)
+            return;
+        _reloadTime = Mathf.Max(_reloadTime - delta, 0.0f);
+        if (_reloadTime <= 0.0f)
+            Ammo = MagazineSize;
+    }
+
+    private void ReadActions(float delta, out float direction, out bool jump, out bool down, out bool up, out bool shoot, out bool parry)
+    {
+        if (!IsBot)
         {
-            SetPhysicsProcess(false);
-            Velocity = Vector2.Zero;
-            (GetTree().GetFirstNodeInGroup("game_over") as GameOverPanel)?.ShowGameOver();
+            direction = Input.GetAxis("move_left", "move_right");
+            jump = Input.IsActionJustPressed("jump");
+            down = Input.IsActionPressed("move_down");
+            up = Input.IsActionPressed("move_up");
+            shoot = Input.IsMouseButtonPressed(MouseButton.Left);
+            parry = Input.IsActionJustPressed("parry");
             return;
         }
 
-        _invulnerable = true;
-        GetTree().CreateTimer(HitInvulnerability).Timeout += () => _invulnerable = false;
+        var toTarget = GodotObject.IsInstanceValid(_target) ? _target!.GlobalPosition - GlobalPosition : Vector2.Zero;
+        direction = Mathf.Abs(toTarget.X) > 330.0f ? Mathf.Sign(toTarget.X) : Mathf.Abs(toTarget.X) < 150.0f ? -Mathf.Sign(toTarget.X) : 0.0f;
+        _botJumpDelay -= delta;
+        jump = (IsOnWall() || (IsOnFloor() && Mathf.Abs(toTarget.Y) > 130.0f)) && _botJumpDelay <= 0.0f;
+        if (jump)
+            _botJumpDelay = (float)GD.RandRange(0.8, 1.5);
+        down = !IsOnFloor() && toTarget.Y > 160.0f;
+        up = IsOnWall() && toTarget.Y < -80.0f;
+        _botShootDelay -= delta;
+        shoot = _botShootDelay <= 0.0f;
+        if (shoot)
+            _botShootDelay = (float)GD.RandRange(0.75, 1.3);
+        _botParryDelay -= delta;
+        parry = false;
+        if (_botParryDelay <= 0.0f && HasIncomingBullet())
+        {
+            parry = true;
+            _botParryDelay = 0.35f;
+        }
+    }
+
+    private bool HasIncomingBullet()
+    {
+        foreach (var node in GetTree().GetNodesInGroup("bullets"))
+        {
+            if (node is not Bullet bullet || bullet.OwnerPlayer == this)
+                continue;
+            var offset = bullet.GlobalPosition - GlobalPosition;
+            if (offset.Length() < 175.0f && bullet.LinearVelocity.Dot(offset) < 0.0f)
+                return true;
+        }
+        return false;
+    }
+
+    private void UpdateAim()
+    {
+        Vector2 targetPosition;
+        if (IsBot && GodotObject.IsInstanceValid(_target))
+        {
+            targetPosition = _target!.GlobalPosition;
+            var distance = targetPosition.DistanceTo(GlobalPosition);
+            targetPosition.Y -= Mathf.Clamp(distance * 0.18f, 25.0f, 210.0f);
+        }
+        else
+        {
+            targetPosition = GetGlobalMousePosition();
+        }
+
+        var aim = targetPosition - GlobalPosition;
+        if (aim.LengthSquared() > 1.0f)
+            AimDirection = aim.Normalized();
+    }
+
+    private void UpdateVisuals()
+    {
+        _gunVisual.Rotation = AimDirection.Angle();
+        _gunVisual.Position = AimDirection * 18.0f;
+        _parryArea.Rotation = AimDirection.Angle();
+        _parryArea.Position = AimDirection * 54.0f;
+    }
+
+    private void TryShoot()
+    {
+        if (_shootCooldown > 0.0f || IsReloading || _parryState == ParryState.Startup || _parryState == ParryState.Active)
+            return;
+        if (Ammo <= 0)
+        {
+            BeginReload();
+            return;
+        }
+
+        var bullet = BulletScene.Instantiate<Bullet>();
+        GetTree().CurrentScene.AddChild(bullet);
+        bullet.GlobalPosition = GlobalPosition + AimDirection * MuzzleDistance;
+        bullet.SetOwnerPlayer(this);
+        bullet.LinearVelocity = AimDirection * BulletSpeed;
+        Velocity -= AimDirection * RecoilStrength;
+        Ammo--;
+        _shootCooldown = ShootInterval;
+        GetTree().CallGroup("camera_shake", "shake", 2.0f, 0.06f);
+        if (Ammo <= 0)
+            BeginReload();
+    }
+
+    private void BeginReload()
+    {
+        if (!IsReloading)
+            _reloadTime = ReloadDuration;
+    }
+
+    private void StartParry()
+    {
+        if (_parryCooldown > 0.0f || _parryState != ParryState.Idle)
+            return;
+        _parryState = ParryState.Startup;
+        _parryTime = ParryStartup;
+        _parryCooldown = ParryCooldownDuration;
     }
 
     private void UpdateParry(float delta)
     {
         if (_parryState == ParryState.Idle)
             return;
-
         _parryTime -= delta;
         if (_parryTime > 0.0f)
             return;
-
         switch (_parryState)
         {
             case ParryState.Startup:
                 _parryState = ParryState.Active;
                 _parryTime = ParryActive;
-                _parryArea.Monitoring = true;
-                _parryCollision.SetDeferred(CollisionShape2D.PropertyName.Disabled, false);
-                _parryVisual.Visible = true;
+                SetParryActive(true);
                 break;
             case ParryState.Active:
                 _parryState = ParryState.Recovery;
                 _parryTime = ParryRecovery;
-                _parryArea.Monitoring = false;
-                _parryCollision.SetDeferred(CollisionShape2D.PropertyName.Disabled, true);
-                _parryVisual.Visible = false;
+                SetParryActive(false);
                 break;
             case ParryState.Recovery:
                 _parryState = ParryState.Idle;
@@ -173,22 +378,16 @@ public partial class Player : CharacterBody2D
         }
     }
 
+    private void SetParryActive(bool active)
+    {
+        _parryArea.Monitoring = active;
+        _parryCollision.SetDeferred(CollisionShape2D.PropertyName.Disabled, !active);
+        _parryVisual.Visible = active;
+    }
+
     private void OnParryBodyEntered(Node2D body)
     {
         if (body is Bullet bullet)
             TryParry(bullet, bullet.LinearVelocity);
-    }
-
-    public bool TryParry(Node2D body, Vector2 incomingVelocity)
-    {
-        if (_parryState != ParryState.Active || body is not Bullet bullet)
-            return false;
-        if (!bullet.Parry(this, incomingVelocity))
-            return false;
-
-        GetTree().CallGroup("camera_shake", "shake", 7.0f, 0.12f);
-        _playerSprite.Modulate = new Color(0.5f, 1.0f, 1.0f);
-        CreateTween().TweenProperty(_playerSprite, "modulate", Colors.White, 0.15);
-        return true;
     }
 }

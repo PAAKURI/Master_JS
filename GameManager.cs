@@ -1,10 +1,15 @@
+using System.Collections.Generic;
+using System.IO;
 using Godot;
 
 public partial class GameManager : Node2D
 {
+    private static readonly PackedScene BulletScene = GD.Load<PackedScene>("res://Scene/bullet.tscn");
     private const float CountdownDuration = 3.0f;
     private const float RoundEndDuration = 3.0f;
     private const int WinsRequired = 2;
+    private const float SnapshotInterval = 1.0f / 30.0f;
+    private const int SnapshotVersion = 1;
 
     private enum GameState { Countdown, Playing, RoundEnd, MatchEnd, Result }
 
@@ -50,6 +55,11 @@ public partial class GameManager : Node2D
     private int _playerTwoWins;
     private int _roundPaletteIndex;
     private bool _deathResolutionQueued;
+    private NetworkSession _session = null!;
+    private float _snapshotTime;
+    private int _currentMapIndex = -1;
+    private bool _clientResultShown;
+    private readonly Dictionary<int, Bullet> _replicaBullets = new();
 
     public override void _Ready()
     {
@@ -61,6 +71,9 @@ public partial class GameManager : Node2D
         _scoreLabel = GetNode<Label>("HUD/Score");
         _messageLabel = GetNode<Label>("HUD/Message");
         _resultPanel = GetNode<GameOverPanel>("GameOverLayer/GameOverPanel");
+        _resultPanel.RestartRequested += OnRestartRequested;
+        _session = NetworkSession.Instance;
+        GD.Print($"PAAKURI GameManager ready: {_session.Mode}");
 
         GetViewport().UseHdr2D = true;
         AddChild(new WorldEnvironment
@@ -77,7 +90,31 @@ public partial class GameManager : Node2D
         _playerTwo.SetTarget(_playerOne);
         _playerOne.Died += OnPlayerDied;
         _playerTwo.Died += OnPlayerDied;
-        StartMatch();
+        if (_session.IsHost)
+        {
+            _playerTwo.IsBot = false;
+            _playerTwo.UsesRemoteInput = true;
+            _session.RemoteInputReceived += OnRemoteInputReceived;
+        }
+        else if (_session.IsClient)
+        {
+            _playerTwo.IsBot = false;
+            _playerOne.IsNetworkReplica = true;
+            _playerTwo.IsNetworkReplica = true;
+            _session.SnapshotReceived += OnSnapshotReceived;
+        }
+
+        if (!_session.IsClient)
+            StartMatch();
+    }
+
+    public override void _ExitTree()
+    {
+        if (_session is null)
+            return;
+        _session.RemoteInputReceived -= OnRemoteInputReceived;
+        _session.SnapshotReceived -= OnSnapshotReceived;
+        _resultPanel.RestartRequested -= OnRestartRequested;
     }
 
     public override void _Process(double deltaValue)
@@ -85,11 +122,21 @@ public partial class GameManager : Node2D
         var delta = (float)deltaValue;
         if (Input.IsActionJustPressed("open_menu"))
         {
-            GetTree().ChangeSceneToFile("res://Scene/start.tscn");
+            if (_session.IsNetworkGame)
+                _session.ReturnToLobby("방에서 나왔습니다.");
+            else
+                GetTree().ChangeSceneToFile("res://Scene/start.tscn");
             return;
         }
-        if (Input.IsActionJustPressed("restart_match"))
+        if (Input.IsActionJustPressed("restart_match") && !_session.IsClient)
             StartMatch();
+
+        if (_session.IsClient)
+        {
+            _session.SendInput(_playerTwo.CaptureLocalCommand());
+            UpdateHud();
+            return;
+        }
 
         switch (_state)
         {
@@ -106,6 +153,15 @@ public partial class GameManager : Node2D
                 break;
         }
         UpdateHud();
+        if (_session.IsHost)
+        {
+            _snapshotTime -= delta;
+            if (_snapshotTime <= 0.0f)
+            {
+                _snapshotTime = SnapshotInterval;
+                _session.BroadcastSnapshot(BuildSnapshot());
+            }
+        }
     }
 
     private void StartMatch()
@@ -122,7 +178,8 @@ public partial class GameManager : Node2D
         var palette = RoundPalettes[_roundPaletteIndex++ % RoundPalettes.Length];
         _background.Color = palette.Background;
         _mapVisual.Modulate = palette.Map;
-        var map = Maps[(int)(GD.Randi() % Maps.Length)];
+        _currentMapIndex = (int)(GD.Randi() % Maps.Length);
+        var map = Maps[_currentMapIndex];
         LoadMap(map);
         _playerOne.ResetForRound(map.PlayerOneSpawn);
         _playerTwo.ResetForRound(map.PlayerTwoSpawn);
@@ -255,7 +312,161 @@ public partial class GameManager : Node2D
     {
         foreach (var node in GetTree().GetNodesInGroup("bullets"))
             node.QueueFree();
+        _replicaBullets.Clear();
     }
+
+    private void OnRemoteInputReceived(PlayerCommand command) => _playerTwo.SetRemoteCommand(command);
+
+    private void OnRestartRequested()
+    {
+        if (!_session.IsClient)
+            StartMatch();
+    }
+
+    private byte[] BuildSnapshot()
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        writer.Write(SnapshotVersion);
+        writer.Write((int)_state);
+        writer.Write(_stateTime);
+        writer.Write(_currentMapIndex);
+        writer.Write(_playerOneWins);
+        writer.Write(_playerTwoWins);
+        writer.Write(_messageLabel.Text ?? string.Empty);
+        WritePlayer(writer, _playerOne);
+        WritePlayer(writer, _playerTwo);
+
+        var bullets = GetTree().GetNodesInGroup("bullets");
+        var countPosition = stream.Position;
+        writer.Write(0);
+        var count = 0;
+        foreach (var node in bullets)
+        {
+            if (node is not Bullet bullet || bullet.IsReplica || !GodotObject.IsInstanceValid(bullet))
+                continue;
+            writer.Write(bullet.NetworkId);
+            WriteVector(writer, bullet.GlobalPosition);
+            WriteVector(writer, bullet.LinearVelocity);
+            writer.Write(bullet.OwnerPlayerId);
+            count++;
+        }
+        var endPosition = stream.Position;
+        stream.Position = countPosition;
+        writer.Write(count);
+        stream.Position = endPosition;
+        return stream.ToArray();
+    }
+
+    private static void WritePlayer(BinaryWriter writer, Player player)
+    {
+        WriteVector(writer, player.GlobalPosition);
+        WriteVector(writer, player.Velocity);
+        WriteVector(writer, player.AimDirection);
+        writer.Write(player.Health);
+        writer.Write(player.Ammo);
+        writer.Write(player.ReloadSeconds);
+        writer.Write(player.ParryCooldownSeconds);
+        writer.Write(player.IsAlive);
+    }
+
+    private static void WriteVector(BinaryWriter writer, Vector2 value)
+    {
+        writer.Write(value.X);
+        writer.Write(value.Y);
+    }
+
+    private void OnSnapshotReceived(byte[] payload)
+    {
+        try
+        {
+            using var stream = new MemoryStream(payload, false);
+            using var reader = new BinaryReader(stream);
+            if (reader.ReadInt32() != SnapshotVersion)
+                return;
+            _state = (GameState)reader.ReadInt32();
+            _stateTime = reader.ReadSingle();
+            var mapIndex = reader.ReadInt32();
+            _playerOneWins = reader.ReadInt32();
+            _playerTwoWins = reader.ReadInt32();
+            _messageLabel.Text = reader.ReadString();
+            if (mapIndex >= 0 && mapIndex < Maps.Length && mapIndex != _currentMapIndex)
+            {
+                _currentMapIndex = mapIndex;
+                LoadMap(Maps[mapIndex]);
+            }
+            ReadPlayer(reader, _playerOne);
+            ReadPlayer(reader, _playerTwo);
+            ReadBullets(reader);
+
+            if (_state == GameState.Result && !_clientResultShown)
+            {
+                _clientResultShown = true;
+                var winner = _playerOneWins >= WinsRequired ? 1 : 2;
+                _resultPanel.ShowResult(winner, _playerOneWins, _playerTwoWins);
+            }
+            else if (_state != GameState.Result && _clientResultShown)
+            {
+                _clientResultShown = false;
+                _resultPanel.Hide();
+            }
+        }
+        catch (EndOfStreamException error)
+        {
+            GD.PushWarning($"잘린 네트워크 스냅샷을 무시했습니다: {error.Message}");
+        }
+    }
+
+    private static void ReadPlayer(BinaryReader reader, Player player)
+    {
+        var position = ReadVector(reader);
+        var velocity = ReadVector(reader);
+        var aim = ReadVector(reader);
+        var health = reader.ReadInt32();
+        var ammo = reader.ReadInt32();
+        var reload = reader.ReadSingle();
+        var parryCooldown = reader.ReadSingle();
+        var alive = reader.ReadBoolean();
+        player.ApplyNetworkState(position, velocity, aim, health, ammo, reload, parryCooldown, alive);
+    }
+
+    private void ReadBullets(BinaryReader reader)
+    {
+        var liveIds = new HashSet<int>();
+        var count = Mathf.Clamp(reader.ReadInt32(), 0, 64);
+        for (var index = 0; index < count; index++)
+        {
+            var id = reader.ReadInt32();
+            var position = ReadVector(reader);
+            var velocity = ReadVector(reader);
+            var ownerId = reader.ReadInt32();
+            liveIds.Add(id);
+            var owner = ownerId == 1 ? _playerOne : ownerId == 2 ? _playerTwo : null;
+            if (_replicaBullets.TryGetValue(id, out var existing) && GodotObject.IsInstanceValid(existing))
+            {
+                existing.ApplyReplicaState(position, velocity, owner);
+                continue;
+            }
+            var bullet = BulletScene.Instantiate<Bullet>();
+            AddChild(bullet, true);
+            bullet.ConfigureReplica(id, position, velocity, owner);
+            _replicaBullets[id] = bullet;
+        }
+
+        var removed = new List<int>();
+        foreach (var pair in _replicaBullets)
+        {
+            if (liveIds.Contains(pair.Key))
+                continue;
+            if (GodotObject.IsInstanceValid(pair.Value))
+                pair.Value.QueueFree();
+            removed.Add(pair.Key);
+        }
+        foreach (var id in removed)
+            _replicaBullets.Remove(id);
+    }
+
+    private static Vector2 ReadVector(BinaryReader reader) => new(reader.ReadSingle(), reader.ReadSingle());
 
     private void UpdateHud()
     {

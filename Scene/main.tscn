@@ -156,6 +156,12 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 24
 text = "TITLE"
 
+[node name="QuitButton" type="Button" parent="GameOverLayer/GameOverPanel/Panel/Content"]
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "QUIT"
+
 [node name="HUD" type="CanvasLayer" parent="." unique_id=158395258]
 layer = 5
 

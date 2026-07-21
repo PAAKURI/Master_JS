@@ -2,7 +2,6 @@ using Godot;
 
 public partial class GameManager : Node2D
 {
-    private const float RoundDuration = 60.0f;
     private const float CountdownDuration = 3.0f;
     private const float RoundEndDuration = 3.0f;
     private const int WinsRequired = 2;
@@ -24,16 +23,13 @@ public partial class GameManager : Node2D
     private StaticBody2D _arena = null!;
     private Sprite2D _mapVisual = null!;
     private Label _scoreLabel = null!;
-    private Label _timerLabel = null!;
     private Label _messageLabel = null!;
     private Label _playerOneStatus = null!;
     private Label _playerTwoStatus = null!;
-    private Label _helpLabel = null!;
     private GameOverPanel _resultPanel = null!;
 
     private GameState _state;
     private float _stateTime;
-    private float _roundTime;
     private float _fightMessageTime;
     private int _playerOneWins;
     private int _playerTwoWins;
@@ -46,18 +42,15 @@ public partial class GameManager : Node2D
         _arena = GetNode<StaticBody2D>("Arena");
         _mapVisual = GetNode<Sprite2D>("Arena/MapVisual");
         _scoreLabel = GetNode<Label>("HUD/Score");
-        _timerLabel = GetNode<Label>("HUD/Timer");
         _messageLabel = GetNode<Label>("HUD/Message");
         _playerOneStatus = GetNode<Label>("HUD/Player1Status");
         _playerTwoStatus = GetNode<Label>("HUD/Player2Status");
-        _helpLabel = GetNode<Label>("HUD/Help");
         _resultPanel = GetNode<GameOverPanel>("GameOverLayer/GameOverPanel");
 
         _playerOne.SetTarget(_playerTwo);
         _playerTwo.SetTarget(_playerOne);
         _playerOne.Died += OnPlayerDied;
         _playerTwo.Died += OnPlayerDied;
-        _helpLabel.Text = "A/D 이동  W 벽 오르기  S 숙이기/빠른 낙하  Space 점프\n좌클릭 사격  우클릭 패링  R 재시작  ESC 시작 화면";
         StartMatch();
     }
 
@@ -105,7 +98,6 @@ public partial class GameManager : Node2D
         _playerOne.ResetForRound(map.PlayerOneSpawn);
         _playerTwo.ResetForRound(map.PlayerTwoSpawn);
         SetCombatEnabled(false);
-        _roundTime = RoundDuration;
         _state = GameState.Countdown;
         _stateTime = CountdownDuration;
         _deathResolutionQueued = false;
@@ -136,13 +128,10 @@ public partial class GameManager : Node2D
                 _messageLabel.Text = string.Empty;
         }
 
-        _roundTime = Mathf.Max(_roundTime - delta, 0.0f);
         if (_playerOne.GlobalPosition.Y > 1120.0f)
             _playerOne.Kill();
         if (_playerTwo.GlobalPosition.Y > 1120.0f)
             _playerTwo.Kill();
-        if (_roundTime <= 0.0f)
-            ResolveTimeout();
     }
 
     private void OnPlayerDied(int playerId)
@@ -164,13 +153,6 @@ public partial class GameManager : Node2D
             EndRound(2);
         else if (!_playerTwo.IsAlive)
             EndRound(1);
-    }
-
-    private void ResolveTimeout()
-    {
-        if (_state != GameState.Playing)
-            return;
-        EndRound(_playerOne.Health == _playerTwo.Health ? 0 : _playerOne.Health > _playerTwo.Health ? 1 : 2);
     }
 
     private void EndRound(int winnerId)
@@ -253,7 +235,6 @@ public partial class GameManager : Node2D
     private void UpdateHud()
     {
         _scoreLabel.Text = $"PLAYER 1  {_playerOneWins}  :  {_playerTwoWins}  PLAYER 2 (BOT)";
-        _timerLabel.Text = Mathf.CeilToInt(_roundTime).ToString("00");
         _playerOneStatus.Text = FormatStatus(_playerOne);
         _playerTwoStatus.Text = FormatStatus(_playerTwo);
     }

@@ -362,10 +362,15 @@ public partial class Player : CharacterBody2D
 
         var inward = (clampedPosition - GlobalPosition).Normalized();
         GlobalPosition = clampedPosition;
+        if (_parryState == ParryState.Active)
+        {
+            Velocity = inward * WallJumpSpeed;
+            _wallJumpLock = WallJumpLockDuration;
+            return;
+        }
         if (Velocity.Dot(inward) < 0.0f)
             Velocity = Velocity.Bounce(inward);
-        if (_parryState != ParryState.Active)
-            TakeHit(50, inward);
+        TakeHit(50, inward);
     }
 
     private void TryShoot()

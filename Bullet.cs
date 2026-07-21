@@ -2,12 +2,16 @@ using Godot;
 
 public partial class Bullet : RigidBody2D
 {
+    private static int _nextNetworkId = 1;
     private const int MaxTrailPoints = 30;
     private const float LifetimeSeconds = 5.0f;
     private const int Damage = 25;
     private const float OwnerCollisionGrace = 0.15f;
 
     public Player? OwnerPlayer { get; private set; }
+    public int NetworkId { get; private set; }
+    public int OwnerPlayerId => GodotObject.IsInstanceValid(OwnerPlayer) ? OwnerPlayer!.PlayerId : 0;
+    public bool IsReplica { get; private set; }
 
     private Line2D _trail = null!;
     private float _age;
@@ -18,6 +22,27 @@ public partial class Bullet : RigidBody2D
     {
         AddToGroup("bullets");
         _trail = GetNode<Line2D>("Trail");
+        if (NetworkId == 0)
+            NetworkId = _nextNetworkId++;
+    }
+
+    public void ConfigureReplica(int networkId, Vector2 position, Vector2 velocity, Player? owner)
+    {
+        NetworkId = networkId;
+        IsReplica = true;
+        Freeze = true;
+        CollisionLayer = 0;
+        CollisionMask = 0;
+        OwnerPlayer = owner;
+        GlobalPosition = position;
+        LinearVelocity = velocity;
+    }
+
+    public void ApplyReplicaState(Vector2 position, Vector2 velocity, Player? owner)
+    {
+        OwnerPlayer = owner;
+        GlobalPosition = GlobalPosition.Lerp(position, 0.65f);
+        LinearVelocity = velocity;
     }
 
     public void SetOwnerPlayer(Player player)
@@ -61,7 +86,7 @@ public partial class Bullet : RigidBody2D
 
     public override void _IntegrateForces(PhysicsDirectBodyState2D state)
     {
-        if (_collisionQueued || state.GetContactCount() == 0)
+        if (IsReplica || _collisionQueued || state.GetContactCount() == 0)
             return;
         _collisionQueued = true;
         var velocity = state.LinearVelocity;

@@ -37,11 +37,16 @@ public partial class Player : CharacterBody2D
     [Export] public bool IsBot { get; set; }
     [Export] public Color PlayerColor { get; set; } = new(0.2f, 0.65f, 1.0f);
 
+    public bool UsesRemoteInput { get; set; }
+    public bool IsNetworkReplica { get; set; }
+
     public int Health { get; private set; } = MaxHealth;
     public int Ammo { get; private set; } = MagazineSize;
     public bool IsReloading => _reloadTime > 0.0f;
     public float ReloadProgress => IsReloading ? 1.0f - _reloadTime / ReloadDuration : 0.0f;
     public float ParryCooldownRatio => _parryCooldown / ParryCooldownDuration;
+    public float ReloadSeconds => _reloadTime;
+    public float ParryCooldownSeconds => _parryCooldown;
     public bool IsAlive { get; private set; } = true;
     public bool InputEnabled { get; set; }
     public bool CombatEnabled { get; set; }
@@ -61,6 +66,9 @@ public partial class Player : CharacterBody2D
     private float _walkAnimationTime;
     private ParryState _parryState;
     private Player? _target;
+    private PlayerCommand _remoteCommand = PlayerCommand.Neutral;
+    private Vector2 _replicaPosition;
+    private Vector2 _replicaVelocity;
 
     private CollisionShape2D _bodyCollision = null!;
     private Area2D _parryArea = null!;
@@ -101,6 +109,15 @@ public partial class Player : CharacterBody2D
     public override void _PhysicsProcess(double deltaValue)
     {
         var delta = (float)deltaValue;
+        if (IsNetworkReplica)
+        {
+            GlobalPosition = GlobalPosition.Lerp(_replicaPosition, Mathf.Min(delta * 18.0f, 1.0f));
+            Velocity = _replicaVelocity;
+            UpdateVisuals();
+            UpdateLegs(delta);
+            return;
+        }
+
         TickTimers(delta);
         UpdateParry(delta);
         UpdateAim();
@@ -180,6 +197,36 @@ public partial class Player : CharacterBody2D
 
     public void SetTarget(Player target) => _target = target;
 
+    public void SetRemoteCommand(PlayerCommand command) => _remoteCommand = command.Sanitized();
+
+    public PlayerCommand CaptureLocalCommand()
+    {
+        var aim = GetGlobalMousePosition() - GlobalPosition;
+        return new PlayerCommand(
+            Input.GetAxis("move_left", "move_right"),
+            Input.IsActionJustPressed("jump"),
+            Input.IsActionPressed("move_down"),
+            Input.IsActionPressed("move_up"),
+            Input.IsMouseButtonPressed(MouseButton.Left),
+            Input.IsActionJustPressed("parry"),
+            aim.LengthSquared() > 1.0f ? aim.Normalized() : AimDirection);
+    }
+
+    public void ApplyNetworkState(Vector2 position, Vector2 velocity, Vector2 aim, int health, int ammo, float reloadTime, float parryCooldown, bool alive)
+    {
+        _replicaPosition = position;
+        _replicaVelocity = velocity;
+        AimDirection = aim.LengthSquared() > 0.0001f ? aim.Normalized() : AimDirection;
+        Health = Mathf.Clamp(health, 0, MaxHealth);
+        Ammo = Mathf.Clamp(ammo, 0, MagazineSize);
+        _reloadTime = Mathf.Max(reloadTime, 0.0f);
+        _parryCooldown = Mathf.Max(parryCooldown, 0.0f);
+        IsAlive = alive;
+        _healthBar.Value = Health;
+        if (GlobalPosition.DistanceTo(position) > 180.0f)
+            GlobalPosition = position;
+    }
+
     public void ResetForRound(Vector2 spawnPosition)
     {
         GlobalPosition = spawnPosition;
@@ -203,6 +250,11 @@ public partial class Player : CharacterBody2D
         _leftLeg.Position = _leftLegRestPosition;
         _rightLeg.Position = _rightLegRestPosition;
         _healthBar.Value = Health;
+        _replicaPosition = spawnPosition;
+        _replicaVelocity = Vector2.Zero;
+        foreach (var child in GetChildren())
+            if (child is EyeBall eye)
+                eye.CallDeferred(EyeBall.MethodName.SnapToAnchor);
         SetPhysicsProcess(true);
     }
 
@@ -264,6 +316,19 @@ public partial class Player : CharacterBody2D
 
     private void ReadActions(float delta, out float direction, out bool jump, out bool down, out bool up, out bool shoot, out bool parry)
     {
+        if (UsesRemoteInput)
+        {
+            var command = _remoteCommand;
+            direction = command.Move;
+            jump = command.Jump;
+            down = command.Down;
+            up = command.Up;
+            shoot = command.Shoot;
+            parry = command.Parry;
+            _remoteCommand = command with { Jump = false, Parry = false };
+            return;
+        }
+
         if (!IsBot)
         {
             direction = Input.GetAxis("move_left", "move_right");
@@ -311,6 +376,12 @@ public partial class Player : CharacterBody2D
 
     private void UpdateAim()
     {
+        if (UsesRemoteInput)
+        {
+            AimDirection = _remoteCommand.Aim;
+            return;
+        }
+
         Vector2 targetPosition;
         if (IsBot && GodotObject.IsInstanceValid(_target))
         {

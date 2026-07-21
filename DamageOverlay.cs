@@ -4,7 +4,7 @@ public partial class DamageOverlay : Control
 {
     private Tween? _fadeTween;
 
-    public void ShowDamage()
+    public void ShowDamage(int playerId = 0)
     {
         if (_fadeTween != null && _fadeTween.IsValid())
             _fadeTween.Kill();

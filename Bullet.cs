@@ -38,7 +38,7 @@ public partial class Bullet : RigidBody2D
 
     public bool Parry(Player player, Vector2 incomingVelocity)
     {
-        if (_collisionQueued || OwnerPlayer == player)
+        if (_collisionQueued)
             return false;
         SetOwnerPlayer(player);
         Sleeping = false;

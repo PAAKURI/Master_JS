@@ -1,11 +1,11 @@
-[gd_scene load_steps=16 format=3]
+[gd_scene format=3 uid="uid://dbfcu52kegab7"]
 
-[ext_resource type="Texture2D" path="res://resources/map_a.png" id="1_map"]
-[ext_resource type="Script" path="res://GameManager.cs" id="2_game"]
-[ext_resource type="Script" path="res://Player.cs" id="3_player"]
-[ext_resource type="Script" path="res://CameraShake.cs" id="4_camera"]
-[ext_resource type="Script" path="res://DamageOverlay.cs" id="5_damage"]
-[ext_resource type="Script" path="res://GameOverPanel.cs" id="6_game_over"]
+[ext_resource type="Texture2D" uid="uid://c5cpvgenog5p" path="res://resources/map_a.png" id="1_map"]
+[ext_resource type="Script" uid="uid://rbwo7o6h5w0p" path="res://GameManager.cs" id="2_game"]
+[ext_resource type="PackedScene" uid="uid://ucmtme1xn70i" path="res://Scene/player.tscn" id="3_player"]
+[ext_resource type="Script" uid="uid://darydi1p8ovve" path="res://CameraShake.cs" id="4_camera"]
+[ext_resource type="Script" uid="uid://dlroy0pv44xok" path="res://DamageOverlay.cs" id="5_damage"]
+[ext_resource type="Script" uid="uid://dkicakwqs4f3u" path="res://GameOverPanel.cs" id="6_game_over"]
 
 [sub_resource type="Shader" id="Shader_damage_edges"]
 code = "shader_type canvas_item;
@@ -17,37 +17,6 @@ void fragment() {
 
 [sub_resource type="ShaderMaterial" id="DamageMaterial"]
 shader = SubResource("Shader_damage_edges")
-
-[sub_resource type="CapsuleShape2D" id="PlayerShape"]
-radius = 28.0
-height = 88.0
-
-[sub_resource type="RectangleShape2D" id="ParryShape"]
-size = Vector2(72, 100)
-
-[sub_resource type="StyleBoxFlat" id="PanelStyle"]
-bg_color = Color(0.015, 0.025, 0.07, 0.82)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.2, 0.65, 1, 0.55)
-corner_radius_top_left = 8
-corner_radius_top_right = 8
-corner_radius_bottom_right = 8
-corner_radius_bottom_left = 8
-
-[sub_resource type="StyleBoxFlat" id="PanelStyleBot"]
-bg_color = Color(0.015, 0.025, 0.07, 0.82)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(1, 0.25, 0.3, 0.55)
-corner_radius_top_left = 8
-corner_radius_top_right = 8
-corner_radius_bottom_right = 8
-corner_radius_bottom_left = 8
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_game_over_panel"]
 content_margin_left = 40.0
@@ -65,141 +34,41 @@ corner_radius_top_right = 12
 corner_radius_bottom_right = 12
 corner_radius_bottom_left = 12
 
-[sub_resource type="StyleBoxFlat" id="HealthBackground"]
-bg_color = Color(0.04, 0.05, 0.08, 0.9)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.9, 0.94, 1, 0.8)
-
-[sub_resource type="StyleBoxFlat" id="HealthFillP1"]
-bg_color = Color(0.18, 0.65, 1, 1)
-
-[sub_resource type="StyleBoxFlat" id="HealthFillP2"]
-bg_color = Color(1, 0.22, 0.3, 1)
-
-[node name="Game" type="Node2D"]
+[node name="Game" type="Node2D" unique_id=1978537282]
 script = ExtResource("2_game")
 
-[node name="Background" type="ColorRect" parent="."]
+[node name="Background" type="ColorRect" parent="." unique_id=582449951]
 offset_right = 1920.0
 offset_bottom = 1080.0
 mouse_filter = 2
-color = Color(0.015, 0.025, 0.065, 1)
+color = Color(0.85882354, 0.18039216, 0.7411765, 1)
 
-[node name="Camera2D" type="Camera2D" parent="." groups=["camera_shake"]]
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1446316137 groups=["camera_shake"]]
 position = Vector2(960, 540)
 script = ExtResource("4_camera")
 
-[node name="Arena" type="StaticBody2D" parent="."]
+[node name="Arena" type="StaticBody2D" parent="." unique_id=1097974791]
 collision_mask = 0
 
-[node name="MapVisual" type="Sprite2D" parent="Arena"]
-position = Vector2(960, 540)
-scale = Vector2(0.966876, 0.966876)
+[node name="MapVisual" type="Sprite2D" parent="Arena" unique_id=775588089]
+position = Vector2(960, 567)
+scale = Vector2(1.2, 1.2)
 texture = ExtResource("1_map")
 
-[node name="Player1" type="CharacterBody2D" parent="."]
+[node name="Player1" parent="." unique_id=1309787084 instance=ExtResource("3_player")]
 position = Vector2(445, 300)
-collision_layer = 2
-script = ExtResource("3_player")
 PlayerColor = Color(0.18, 0.65, 1, 1)
 
-[node name="BodyVisual" type="Polygon2D" parent="Player1"]
-polygon = PackedVector2Array(-28, -42, 28, -42, 34, 22, 20, 44, -20, 44, -34, 22)
-color = Color(0.18, 0.65, 1, 1)
-
-[node name="Face" type="Polygon2D" parent="Player1"]
-position = Vector2(0, -12)
-polygon = PackedVector2Array(-12, -3, -7, -3, -7, 3, -12, 3, 7, -3, 12, -3, 12, 3, 7, 3)
-color = Color(0.02, 0.04, 0.09, 1)
-
-[node name="GunVisual" type="Polygon2D" parent="Player1"]
-polygon = PackedVector2Array(0, -7, 48, -7, 55, 0, 48, 7, 0, 7)
-color = Color(0.12, 0.15, 0.22, 1)
-
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Player1"]
-shape = SubResource("PlayerShape")
-
-[node name="HealthBar" type="ProgressBar" parent="Player1"]
-offset_left = -55.0
-offset_top = -74.0
-offset_right = 55.0
-offset_bottom = -60.0
-mouse_filter = 2
-theme_override_styles/background = SubResource("HealthBackground")
-theme_override_styles/fill = SubResource("HealthFillP1")
-value = 100.0
-show_percentage = false
-
-[node name="ParryArea" type="Area2D" parent="Player1"]
-collision_layer = 0
-collision_mask = 4
-monitoring = false
-
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Player1/ParryArea"]
-shape = SubResource("ParryShape")
-disabled = true
-
-[node name="Visual" type="Polygon2D" parent="Player1/ParryArea"]
-visible = false
-color = Color(0.3, 0.9, 1, 0.34)
-polygon = PackedVector2Array(-36, -50, 36, -50, 48, 0, 36, 50, -36, 50)
-
-[node name="Player2" type="CharacterBody2D" parent="."]
+[node name="Player2" parent="." unique_id=1822590361 instance=ExtResource("3_player")]
 position = Vector2(1475, 300)
-collision_layer = 2
-script = ExtResource("3_player")
 PlayerId = 2
 IsBot = true
 PlayerColor = Color(1, 0.22, 0.3, 1)
 
-[node name="BodyVisual" type="Polygon2D" parent="Player2"]
-polygon = PackedVector2Array(-28, -42, 28, -42, 34, 22, 20, 44, -20, 44, -34, 22)
-color = Color(1, 0.22, 0.3, 1)
-
-[node name="Face" type="Polygon2D" parent="Player2"]
-position = Vector2(0, -12)
-polygon = PackedVector2Array(-12, -3, -7, -3, -7, 3, -12, 3, 7, -3, 12, -3, 12, 3, 7, 3)
-color = Color(0.02, 0.04, 0.09, 1)
-
-[node name="GunVisual" type="Polygon2D" parent="Player2"]
-polygon = PackedVector2Array(0, -7, 48, -7, 55, 0, 48, 7, 0, 7)
-color = Color(0.12, 0.15, 0.22, 1)
-
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Player2"]
-shape = SubResource("PlayerShape")
-
-[node name="HealthBar" type="ProgressBar" parent="Player2"]
-offset_left = -55.0
-offset_top = -74.0
-offset_right = 55.0
-offset_bottom = -60.0
-mouse_filter = 2
-theme_override_styles/background = SubResource("HealthBackground")
-theme_override_styles/fill = SubResource("HealthFillP2")
-value = 100.0
-show_percentage = false
-
-[node name="ParryArea" type="Area2D" parent="Player2"]
-collision_layer = 0
-collision_mask = 4
-monitoring = false
-
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Player2/ParryArea"]
-shape = SubResource("ParryShape")
-disabled = true
-
-[node name="Visual" type="Polygon2D" parent="Player2/ParryArea"]
-visible = false
-color = Color(1, 0.35, 0.4, 0.34)
-polygon = PackedVector2Array(-36, -50, 36, -50, 48, 0, 36, 50, -36, 50)
-
-[node name="DamageOverlayLayer" type="CanvasLayer" parent="."]
+[node name="DamageOverlayLayer" type="CanvasLayer" parent="." unique_id=1566707813]
 layer = 10
 
-[node name="DamageOverlay" type="Control" parent="DamageOverlayLayer" groups=["damage_overlay"]]
+[node name="DamageOverlay" type="Control" parent="DamageOverlayLayer" unique_id=1589227984 groups=["damage_overlay"]]
 modulate = Color(1, 1, 1, 0)
 layout_mode = 3
 anchors_preset = 15
@@ -210,7 +79,7 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("5_damage")
 
-[node name="Edges" type="ColorRect" parent="DamageOverlayLayer/DamageOverlay"]
+[node name="Edges" type="ColorRect" parent="DamageOverlayLayer/DamageOverlay" unique_id=1856630415]
 material = SubResource("DamageMaterial")
 layout_mode = 1
 anchors_preset = 15
@@ -220,10 +89,10 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="GameOverLayer" type="CanvasLayer" parent="."]
+[node name="GameOverLayer" type="CanvasLayer" parent="." unique_id=2136566710]
 layer = 20
 
-[node name="GameOverPanel" type="Control" parent="GameOverLayer" groups=["game_over"]]
+[node name="GameOverPanel" type="Control" parent="GameOverLayer" unique_id=502550692 groups=["game_over"]]
 visible = false
 layout_mode = 3
 anchors_preset = 15
@@ -233,7 +102,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("6_game_over")
 
-[node name="Dim" type="ColorRect" parent="GameOverLayer/GameOverPanel"]
+[node name="Dim" type="ColorRect" parent="GameOverLayer/GameOverPanel" unique_id=1509924278]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -242,7 +111,7 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0, 0, 0, 0.65)
 
-[node name="Panel" type="PanelContainer" parent="GameOverLayer/GameOverPanel"]
+[node name="Panel" type="PanelContainer" parent="GameOverLayer/GameOverPanel" unique_id=243616285]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -257,86 +126,49 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_game_over_panel")
 
-[node name="Content" type="VBoxContainer" parent="GameOverLayer/GameOverPanel/Panel"]
+[node name="Content" type="VBoxContainer" parent="GameOverLayer/GameOverPanel/Panel" unique_id=1585119841]
 layout_mode = 2
 theme_override_constants/separation = 20
 alignment = 1
 
-[node name="Title" type="Label" parent="GameOverLayer/GameOverPanel/Panel/Content"]
+[node name="Title" type="Label" parent="GameOverLayer/GameOverPanel/Panel/Content" unique_id=2014415721]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.35, 0.35, 1)
 theme_override_font_sizes/font_size = 48
 text = "GAME OVER"
 horizontal_alignment = 1
 
-[node name="Score" type="Label" parent="GameOverLayer/GameOverPanel/Panel/Content"]
+[node name="Score" type="Label" parent="GameOverLayer/GameOverPanel/Panel/Content" unique_id=1334699975]
 layout_mode = 2
 theme_override_font_sizes/font_size = 36
 text = "0 : 0"
 horizontal_alignment = 1
 
-[node name="RestartButton" type="Button" parent="GameOverLayer/GameOverPanel/Panel/Content"]
+[node name="RestartButton" type="Button" parent="GameOverLayer/GameOverPanel/Panel/Content" unique_id=1387109096]
 custom_minimum_size = Vector2(0, 64)
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
 text = "RESTART"
 
-[node name="TitleButton" type="Button" parent="GameOverLayer/GameOverPanel/Panel/Content"]
+[node name="TitleButton" type="Button" parent="GameOverLayer/GameOverPanel/Panel/Content" unique_id=1062377345]
 custom_minimum_size = Vector2(0, 64)
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
 text = "TITLE"
 
-[node name="QuitButton" type="Button" parent="GameOverLayer/GameOverPanel/Panel/Content"]
-custom_minimum_size = Vector2(0, 64)
-layout_mode = 2
-theme_override_font_sizes/font_size = 24
-text = "QUIT"
-
-[node name="HUD" type="CanvasLayer" parent="."]
+[node name="HUD" type="CanvasLayer" parent="." unique_id=158395258]
 layer = 5
 
-[node name="Player1Panel" type="PanelContainer" parent="HUD"]
-offset_left = 28.0
-offset_top = 24.0
-offset_right = 470.0
-offset_bottom = 95.0
-theme_override_styles/panel = SubResource("PanelStyle")
-
-[node name="Player1Status" type="Label" parent="HUD"]
-offset_left = 50.0
-offset_top = 43.0
-offset_right = 450.0
-offset_bottom = 78.0
-theme_override_font_sizes/font_size = 24
-text = "●●●●"
-
-[node name="Player2Panel" type="PanelContainer" parent="HUD"]
-offset_left = 1450.0
-offset_top = 24.0
-offset_right = 1892.0
-offset_bottom = 95.0
-theme_override_styles/panel = SubResource("PanelStyleBot")
-
-[node name="Player2Status" type="Label" parent="HUD"]
-offset_left = 1470.0
-offset_top = 43.0
-offset_right = 1870.0
-offset_bottom = 78.0
-theme_override_font_sizes/font_size = 24
-text = "●●●●"
-horizontal_alignment = 2
-
-[node name="Score" type="Label" parent="HUD"]
+[node name="Score" type="Label" parent="HUD" unique_id=9457124]
 offset_left = 600.0
 offset_top = 24.0
 offset_right = 1320.0
 offset_bottom = 62.0
 theme_override_font_sizes/font_size = 26
-text = "PLAYER 1  0 : 0  PLAYER 2 (BOT)"
+text = "0 : 0"
 horizontal_alignment = 1
 
-[node name="Message" type="Label" parent="HUD"]
+[node name="Message" type="Label" parent="HUD" unique_id=556381110]
 offset_left = 360.0
 offset_top = 410.0
 offset_right = 1560.0

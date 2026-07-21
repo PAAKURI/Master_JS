@@ -6,6 +6,7 @@ public partial class Player : CharacterBody2D
     [Signal] public delegate void DiedEventHandler(int playerId);
 
     private static readonly PackedScene BulletScene = GD.Load<PackedScene>("res://Scene/bullet.tscn");
+    private static readonly Vector2 ArenaSize = new(1920.0f, 1080.0f);
 
     private const float Speed = 400.0f;
     private const float CrouchSpeed = 120.0f;
@@ -18,10 +19,10 @@ public partial class Player : CharacterBody2D
     private const float CoyoteDuration = 0.1f;
     private const float JumpBufferDuration = 0.1f;
     private const float BulletSpeed = 1100.0f;
-    private const float MuzzleDistance = 58.0f;
     private const float ShootInterval = 0.7f;
     private const float ReloadDuration = 3.0f;
     private const float RecoilStrength = 145.0f;
+    private const float ArenaMargin = 48.0f;
     private const float HitInvulnerability = 0.15f;
     private const float ParryStartup = 0.05f;
     private const float ParryActive = 0.15f;
@@ -57,6 +58,7 @@ public partial class Player : CharacterBody2D
     private float _botShootDelay;
     private float _botParryDelay;
     private float _botJumpDelay;
+    private float _walkAnimationTime;
     private ParryState _parryState;
     private Player? _target;
 
@@ -64,8 +66,13 @@ public partial class Player : CharacterBody2D
     private Area2D _parryArea = null!;
     private CollisionShape2D _parryCollision = null!;
     private Polygon2D _parryVisual = null!;
-    private Polygon2D _bodyVisual = null!;
-    private Polygon2D _gunVisual = null!;
+    private Node2D _bodyVisual = null!;
+    private Sprite2D _head = null!;
+    private Sprite2D _mouth = null!;
+    private Sprite2D _leftLeg = null!;
+    private Sprite2D _rightLeg = null!;
+    private Vector2 _leftLegRestPosition;
+    private Vector2 _rightLegRestPosition;
     private ProgressBar _healthBar = null!;
 
     public override void _Ready()
@@ -75,10 +82,17 @@ public partial class Player : CharacterBody2D
         _parryArea = GetNode<Area2D>("ParryArea");
         _parryCollision = GetNode<CollisionShape2D>("ParryArea/CollisionShape2D");
         _parryVisual = GetNode<Polygon2D>("ParryArea/Visual");
-        _bodyVisual = GetNode<Polygon2D>("BodyVisual");
-        _gunVisual = GetNode<Polygon2D>("GunVisual");
+        _bodyVisual = GetNode<Node2D>("BodyVisual");
+        _head = GetNode<Sprite2D>("BodyVisual/Head");
+        _mouth = GetNode<Sprite2D>("BodyVisual/Tuck");
+        _leftLeg = GetNode<Sprite2D>("BodyVisual/LeftLeg");
+        _rightLeg = GetNode<Sprite2D>("BodyVisual/RightLeg");
+        _leftLegRestPosition = _leftLeg.Position;
+        _rightLegRestPosition = _rightLeg.Position;
         _healthBar = GetNode<ProgressBar>("HealthBar");
-        _bodyVisual.Color = PlayerColor;
+        _bodyVisual.Modulate = PlayerColor;
+        _parryVisual.Color = new Color(PlayerColor.R, PlayerColor.G, PlayerColor.B, 0.34f);
+        _healthBar.AddThemeStyleboxOverride("fill", new StyleBoxFlat { BgColor = PlayerColor });
         _healthBar.Value = Health;
         _parryArea.BodyEntered += OnParryBodyEntered;
         _botShootDelay = (float)GD.RandRange(0.5, 1.2);
@@ -96,6 +110,8 @@ public partial class Player : CharacterBody2D
         {
             Velocity += GetGravity() * delta;
             MoveAndSlide();
+            KeepInsideArena();
+            UpdateLegs(delta);
             return;
         }
 
@@ -158,6 +174,8 @@ public partial class Player : CharacterBody2D
         }
 
         MoveAndSlide();
+        KeepInsideArena();
+        UpdateLegs(delta);
     }
 
     public void SetTarget(Player target) => _target = target;
@@ -181,6 +199,9 @@ public partial class Player : CharacterBody2D
         _bodyCollision.Position = Vector2.Zero;
         _bodyVisual.Scale = Vector2.One;
         _bodyVisual.Position = Vector2.Zero;
+        _walkAnimationTime = 0.0f;
+        _leftLeg.Position = _leftLegRestPosition;
+        _rightLeg.Position = _rightLegRestPosition;
         _healthBar.Value = Health;
         SetPhysicsProcess(true);
     }
@@ -309,10 +330,42 @@ public partial class Player : CharacterBody2D
 
     private void UpdateVisuals()
     {
-        _gunVisual.Rotation = AimDirection.Angle();
-        _gunVisual.Position = AimDirection * 18.0f;
         _parryArea.Rotation = AimDirection.Angle();
         _parryArea.Position = AimDirection * 54.0f;
+    }
+
+    private void UpdateLegs(float delta)
+    {
+        if (InputEnabled && IsAlive && IsOnFloor() && Mathf.Abs(Velocity.X) > 1.0f)
+        {
+            _walkAnimationTime += delta * 12.0f * Mathf.Abs(Velocity.X) / Speed;
+            var stride = Mathf.Sin(_walkAnimationTime) * 5.0f;
+            _leftLeg.Position = _leftLegRestPosition + new Vector2(stride, -Mathf.Max(stride, 0.0f) * 0.5f);
+            _rightLeg.Position = _rightLegRestPosition + new Vector2(-stride, -Mathf.Max(-stride, 0.0f) * 0.5f);
+            return;
+        }
+
+        _walkAnimationTime = 0.0f;
+        var settle = Mathf.Min(delta * 18.0f, 1.0f);
+        _leftLeg.Position = _leftLeg.Position.Lerp(_leftLegRestPosition, settle);
+        _rightLeg.Position = _rightLeg.Position.Lerp(_rightLegRestPosition, settle);
+    }
+
+    private void KeepInsideArena()
+    {
+        var clampedPosition = new Vector2(
+            Mathf.Clamp(GlobalPosition.X, ArenaMargin, ArenaSize.X - ArenaMargin),
+            Mathf.Clamp(GlobalPosition.Y, ArenaMargin, ArenaSize.Y - ArenaMargin)
+        );
+        if (GlobalPosition == clampedPosition)
+            return;
+
+        var inward = (clampedPosition - GlobalPosition).Normalized();
+        GlobalPosition = clampedPosition;
+        if (Velocity.Dot(inward) < 0.0f)
+            Velocity = Velocity.Bounce(inward);
+        if (_parryState != ParryState.Active)
+            TakeHit(50, inward);
     }
 
     private void TryShoot()
@@ -327,9 +380,13 @@ public partial class Player : CharacterBody2D
 
         var bullet = BulletScene.Instantiate<Bullet>();
         GetTree().CurrentScene.AddChild(bullet);
-        bullet.GlobalPosition = GlobalPosition + AimDirection * MuzzleDistance;
+        bullet.GlobalPosition = _mouth.GlobalPosition;
         bullet.SetOwnerPlayer(this);
         bullet.LinearVelocity = AimDirection * BulletSpeed;
+        var headPosition = _head.Position;
+        var headTween = CreateTween();
+        headTween.TweenProperty(_head, "position", headPosition + Vector2.Up * 8.0f, 0.05);
+        headTween.TweenProperty(_head, "position", headPosition, 0.08);
         Velocity -= AimDirection * RecoilStrength;
         Ammo--;
         _shootCooldown = ShootInterval;

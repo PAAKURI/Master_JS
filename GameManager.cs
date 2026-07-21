@@ -18,14 +18,29 @@ public partial class GameManager : Node2D
         new("res://resources/map_g.png", new Vector2(300, 300), new Vector2(1620, 300))
     };
 
+    private static readonly (Color Background, Color Map)[] RoundPalettes =
+    {
+        (new Color(0.02f, 0.07f, 0.16f), new Color(0.25f, 1.35f, 1.8f)),
+        (new Color(0.09f, 0.03f, 0.17f), new Color(1.8f, 0.35f, 1.3f)),
+        (new Color(0.02f, 0.12f, 0.13f), new Color(0.55f, 1.8f, 0.75f)),
+        (new Color(0.16f, 0.04f, 0.08f), new Color(1.8f, 0.9f, 0.25f)),
+        (new Color(0.02f, 0.04f, 0.17f), new Color(0.45f, 0.75f, 1.8f)),
+        (new Color(0.15f, 0.02f, 0.02f), new Color(1.8f, 0.25f, 0.3f)),
+        (new Color(0.13f, 0.1f, 0.01f), new Color(1.8f, 1.55f, 0.2f)),
+        (new Color(0.07f, 0.02f, 0.14f), new Color(1.15f, 0.45f, 1.8f)),
+        (new Color(0.01f, 0.12f, 0.09f), new Color(0.3f, 1.8f, 1.25f)),
+        (new Color(0.16f, 0.05f, 0.04f), new Color(1.8f, 0.55f, 0.4f)),
+        (new Color(0.03f, 0.03f, 0.15f), new Color(0.7f, 0.45f, 1.8f)),
+        (new Color(0.01f, 0.1f, 0.15f), new Color(0.25f, 1.7f, 1.6f))
+    };
+
     private Player _playerOne = null!;
     private Player _playerTwo = null!;
     private StaticBody2D _arena = null!;
+    private ColorRect _background = null!;
     private Sprite2D _mapVisual = null!;
     private Label _scoreLabel = null!;
     private Label _messageLabel = null!;
-    private Label _playerOneStatus = null!;
-    private Label _playerTwoStatus = null!;
     private GameOverPanel _resultPanel = null!;
 
     private GameState _state;
@@ -33,6 +48,7 @@ public partial class GameManager : Node2D
     private float _fightMessageTime;
     private int _playerOneWins;
     private int _playerTwoWins;
+    private int _roundPaletteIndex;
     private bool _deathResolutionQueued;
 
     public override void _Ready()
@@ -40,12 +56,22 @@ public partial class GameManager : Node2D
         _playerOne = GetNode<Player>("Player1");
         _playerTwo = GetNode<Player>("Player2");
         _arena = GetNode<StaticBody2D>("Arena");
+        _background = GetNode<ColorRect>("Background");
         _mapVisual = GetNode<Sprite2D>("Arena/MapVisual");
         _scoreLabel = GetNode<Label>("HUD/Score");
         _messageLabel = GetNode<Label>("HUD/Message");
-        _playerOneStatus = GetNode<Label>("HUD/Player1Status");
-        _playerTwoStatus = GetNode<Label>("HUD/Player2Status");
         _resultPanel = GetNode<GameOverPanel>("GameOverLayer/GameOverPanel");
+
+        GetViewport().UseHdr2D = true;
+        AddChild(new WorldEnvironment
+        {
+            Environment = new Godot.Environment
+            {
+                GlowEnabled = true,
+                GlowIntensity = 1.25f,
+                GlowHdrThreshold = 1.1f
+            }
+        });
 
         _playerOne.SetTarget(_playerTwo);
         _playerTwo.SetTarget(_playerOne);
@@ -93,6 +119,9 @@ public partial class GameManager : Node2D
     private void BeginRound()
     {
         ClearBullets();
+        var palette = RoundPalettes[_roundPaletteIndex++ % RoundPalettes.Length];
+        _background.Color = palette.Background;
+        _mapVisual.Modulate = palette.Map;
         var map = Maps[(int)(GD.Randi() % Maps.Length)];
         LoadMap(map);
         _playerOne.ResetForRound(map.PlayerOneSpawn);
@@ -128,10 +157,6 @@ public partial class GameManager : Node2D
                 _messageLabel.Text = string.Empty;
         }
 
-        if (_playerOne.GlobalPosition.Y > 1120.0f)
-            _playerOne.Kill();
-        if (_playerTwo.GlobalPosition.Y > 1120.0f)
-            _playerTwo.Kill();
     }
 
     private void OnPlayerDied(int playerId)
@@ -234,17 +259,6 @@ public partial class GameManager : Node2D
 
     private void UpdateHud()
     {
-        _scoreLabel.Text = $"PLAYER 1  {_playerOneWins}  :  {_playerTwoWins}  PLAYER 2 (BOT)";
-        _playerOneStatus.Text = FormatStatus(_playerOne);
-        _playerTwoStatus.Text = FormatStatus(_playerTwo);
-    }
-
-    private static string FormatStatus(Player player)
-    {
-        var ammo = new string('●', player.Ammo) + new string('○', 4 - player.Ammo);
-        var extra = player.IsReloading ? $"  재장전 {Mathf.RoundToInt(player.ReloadProgress * 100)}%" : string.Empty;
-        if (player.ParryCooldownRatio > 0.0f)
-            extra += $"  패링 {Mathf.RoundToInt((1.0f - player.ParryCooldownRatio) * 100)}%";
-        return ammo + extra;
+        _scoreLabel.Text = $"{_playerOneWins} : {_playerTwoWins}";
     }
 }

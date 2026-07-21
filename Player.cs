@@ -134,6 +134,7 @@ public partial class Player : CharacterBody2D
         {
             SetPhysicsProcess(false);
             Velocity = Vector2.Zero;
+            (GetTree().GetFirstNodeInGroup("game_over") as GameOverPanel)?.ShowGameOver();
             return;
         }
 

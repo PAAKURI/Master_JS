@@ -1,10 +1,11 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=16 format=3]
 
-[ext_resource type="Texture2D" path="res://resources/map1.png" id="1_map"]
+[ext_resource type="Texture2D" path="res://resources/map_a.png" id="1_map"]
 [ext_resource type="Script" path="res://GameManager.cs" id="2_game"]
 [ext_resource type="Script" path="res://Player.cs" id="3_player"]
 [ext_resource type="Script" path="res://CameraShake.cs" id="4_camera"]
 [ext_resource type="Script" path="res://DamageOverlay.cs" id="5_damage"]
+[ext_resource type="Script" path="res://GameOverPanel.cs" id="6_game_over"]
 
 [sub_resource type="Shader" id="Shader_damage_edges"]
 code = "shader_type canvas_item;
@@ -48,6 +49,36 @@ corner_radius_top_right = 8
 corner_radius_bottom_right = 8
 corner_radius_bottom_left = 8
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_game_over_panel"]
+content_margin_left = 40.0
+content_margin_top = 40.0
+content_margin_right = 40.0
+content_margin_bottom = 40.0
+bg_color = Color(0.04, 0.05, 0.08, 0.98)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.3, 0.9, 1, 0.8)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[sub_resource type="StyleBoxFlat" id="HealthBackground"]
+bg_color = Color(0.04, 0.05, 0.08, 0.9)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.9, 0.94, 1, 0.8)
+
+[sub_resource type="StyleBoxFlat" id="HealthFillP1"]
+bg_color = Color(0.18, 0.65, 1, 1)
+
+[sub_resource type="StyleBoxFlat" id="HealthFillP2"]
+bg_color = Color(1, 0.22, 0.3, 1)
+
 [node name="Game" type="Node2D"]
 script = ExtResource("2_game")
 
@@ -62,18 +93,12 @@ position = Vector2(960, 540)
 script = ExtResource("4_camera")
 
 [node name="Arena" type="StaticBody2D" parent="."]
-position = Vector2(0, 100)
 collision_mask = 0
 
-[node name="Map1" type="Sprite2D" parent="Arena"]
-position = Vector2(958, 666)
-scale = Vector2(0.4, 0.4)
+[node name="MapVisual" type="Sprite2D" parent="Arena"]
+position = Vector2(960, 540)
+scale = Vector2(0.966876, 0.966876)
 texture = ExtResource("1_map")
-
-[node name="CollisionPolygon2D" type="CollisionPolygon2D" parent="Arena"]
-position = Vector2(958, 666)
-scale = Vector2(0.4, 0.4)
-polygon = PackedVector2Array(-468, -999, -623.80005, -843, -626, -843, -626, -837.2, -560, -772.2, -560, -438.90002, -1134.7, 83.80005, -2200.7, -844.4, -2201, 999, 2201, 999, 2201, -843.3, 2198.7002, -844.4, 1133.3, 85, 558.80005, -440, 558, -440, 558, -771.2, 625, -837.2, 625, -841.8, 467, -998.9, 455.19995, -999, 300.19995, -843, 298, -843, 298, -837.2, 363, -773.2, 363, -403.90002, -1.6000977, -73.29999, -365, -404.90002, -365, -772.2, -299, -837.2, -299, -841.8, -457, -998.9)
 
 [node name="Player1" type="CharacterBody2D" parent="."]
 position = Vector2(445, 300)
@@ -96,6 +121,17 @@ color = Color(0.12, 0.15, 0.22, 1)
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Player1"]
 shape = SubResource("PlayerShape")
+
+[node name="HealthBar" type="ProgressBar" parent="Player1"]
+offset_left = -55.0
+offset_top = -74.0
+offset_right = 55.0
+offset_bottom = -60.0
+mouse_filter = 2
+theme_override_styles/background = SubResource("HealthBackground")
+theme_override_styles/fill = SubResource("HealthFillP1")
+value = 100.0
+show_percentage = false
 
 [node name="ParryArea" type="Area2D" parent="Player1"]
 collision_layer = 0
@@ -135,6 +171,17 @@ color = Color(0.12, 0.15, 0.22, 1)
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Player2"]
 shape = SubResource("PlayerShape")
 
+[node name="HealthBar" type="ProgressBar" parent="Player2"]
+offset_left = -55.0
+offset_top = -74.0
+offset_right = 55.0
+offset_bottom = -60.0
+mouse_filter = 2
+theme_override_styles/background = SubResource("HealthBackground")
+theme_override_styles/fill = SubResource("HealthFillP2")
+value = 100.0
+show_percentage = false
+
 [node name="ParryArea" type="Area2D" parent="Player2"]
 collision_layer = 0
 collision_mask = 4
@@ -173,6 +220,79 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
+[node name="GameOverLayer" type="CanvasLayer" parent="."]
+layer = 20
+
+[node name="GameOverPanel" type="Control" parent="GameOverLayer" groups=["game_over"]]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("6_game_over")
+
+[node name="Dim" type="ColorRect" parent="GameOverLayer/GameOverPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.65)
+
+[node name="Panel" type="PanelContainer" parent="GameOverLayer/GameOverPanel"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -240.0
+offset_top = -280.0
+offset_right = 240.0
+offset_bottom = 280.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_game_over_panel")
+
+[node name="Content" type="VBoxContainer" parent="GameOverLayer/GameOverPanel/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 20
+alignment = 1
+
+[node name="Title" type="Label" parent="GameOverLayer/GameOverPanel/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.35, 0.35, 1)
+theme_override_font_sizes/font_size = 48
+text = "GAME OVER"
+horizontal_alignment = 1
+
+[node name="Score" type="Label" parent="GameOverLayer/GameOverPanel/Panel/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 36
+text = "0 : 0"
+horizontal_alignment = 1
+
+[node name="RestartButton" type="Button" parent="GameOverLayer/GameOverPanel/Panel/Content"]
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "RESTART"
+
+[node name="TitleButton" type="Button" parent="GameOverLayer/GameOverPanel/Panel/Content"]
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "TITLE"
+
+[node name="QuitButton" type="Button" parent="GameOverLayer/GameOverPanel/Panel/Content"]
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "QUIT"
+
 [node name="HUD" type="CanvasLayer" parent="."]
 layer = 5
 
@@ -189,7 +309,7 @@ offset_top = 43.0
 offset_right = 450.0
 offset_bottom = 78.0
 theme_override_font_sizes/font_size = 24
-text = "HP 100   ●●●●"
+text = "●●●●"
 
 [node name="Player2Panel" type="PanelContainer" parent="HUD"]
 offset_left = 1450.0
@@ -204,7 +324,7 @@ offset_top = 43.0
 offset_right = 1870.0
 offset_bottom = 78.0
 theme_override_font_sizes/font_size = 24
-text = "HP 100   ●●●●"
+text = "●●●●"
 horizontal_alignment = 2
 
 [node name="Score" type="Label" parent="HUD"]

@@ -31,7 +31,7 @@ public partial class Bullet : RigidBody2D
         var version = _ownerVersion;
         GetTree().CreateTimer(OwnerCollisionGrace).Timeout += () =>
         {
-            if (version == _ownerVersion && GodotObject.IsInstanceValid(ignoredPlayer))
+            if (GodotObject.IsInstanceValid(this) && version == _ownerVersion && GodotObject.IsInstanceValid(ignoredPlayer))
                 RemoveCollisionExceptionWith(ignoredPlayer);
         };
     }

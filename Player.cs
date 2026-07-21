@@ -43,6 +43,7 @@ public partial class Player : CharacterBody2D
     public float ParryCooldownRatio => _parryCooldown / ParryCooldownDuration;
     public bool IsAlive { get; private set; } = true;
     public bool InputEnabled { get; set; }
+    public bool CombatEnabled { get; set; }
     public Vector2 AimDirection { get; private set; } = Vector2.Right;
 
     private float _wallJumpLock;
@@ -65,6 +66,7 @@ public partial class Player : CharacterBody2D
     private Polygon2D _parryVisual = null!;
     private Polygon2D _bodyVisual = null!;
     private Polygon2D _gunVisual = null!;
+    private ProgressBar _healthBar = null!;
 
     public override void _Ready()
     {
@@ -75,7 +77,9 @@ public partial class Player : CharacterBody2D
         _parryVisual = GetNode<Polygon2D>("ParryArea/Visual");
         _bodyVisual = GetNode<Polygon2D>("BodyVisual");
         _gunVisual = GetNode<Polygon2D>("GunVisual");
+        _healthBar = GetNode<ProgressBar>("HealthBar");
         _bodyVisual.Color = PlayerColor;
+        _healthBar.Value = Health;
         _parryArea.BodyEntered += OnParryBodyEntered;
         _botShootDelay = (float)GD.RandRange(0.5, 1.2);
     }
@@ -112,7 +116,9 @@ public partial class Player : CharacterBody2D
 
         var crouching = IsOnFloor() && downPressed;
         _bodyCollision.Scale = new Vector2(1.0f, crouching ? 0.62f : 1.0f);
+        _bodyCollision.Position = new Vector2(0.0f, crouching ? 16.7f : 0.0f);
         _bodyVisual.Scale = new Vector2(1.0f, crouching ? 0.62f : 1.0f);
+        _bodyVisual.Position = new Vector2(0.0f, crouching ? 16.7f : 0.0f);
 
         if (IsOnFloor())
             _coyoteTime = CoyoteDuration;
@@ -164,6 +170,7 @@ public partial class Player : CharacterBody2D
         Ammo = MagazineSize;
         IsAlive = true;
         InputEnabled = false;
+        CombatEnabled = false;
         _shootCooldown = 0.0f;
         _reloadTime = 0.0f;
         _invulnerabilityTime = 0.0f;
@@ -171,7 +178,10 @@ public partial class Player : CharacterBody2D
         _parryState = ParryState.Idle;
         SetParryActive(false);
         _bodyCollision.Scale = Vector2.One;
+        _bodyCollision.Position = Vector2.Zero;
         _bodyVisual.Scale = Vector2.One;
+        _bodyVisual.Position = Vector2.Zero;
+        _healthBar.Value = Health;
         SetPhysicsProcess(true);
     }
 
@@ -186,10 +196,11 @@ public partial class Player : CharacterBody2D
 
     public bool TakeHit(int amount, Vector2 bulletVelocity)
     {
-        if (!IsAlive || _invulnerabilityTime > 0.0f)
+        if (!CombatEnabled || !IsAlive || _invulnerabilityTime > 0.0f)
             return false;
 
         Health = Math.Max(Health - amount, 0);
+        _healthBar.Value = Health;
         _invulnerabilityTime = HitInvulnerability;
         var knockbackDirection = bulletVelocity.LengthSquared() > 0.01f ? bulletVelocity.Normalized() : Vector2.Up;
         Velocity += knockbackDirection * 430.0f + Vector2.Up * 120.0f;

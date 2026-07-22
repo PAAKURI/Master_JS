@@ -15,7 +15,7 @@
 
 <img width="1917" height="1028" alt="스크린샷 2026-07-22 171858" src="https://github.com/user-attachments/assets/fc651c53-b7be-4941-96f8-2be8f67c10f5" />
 
-
+※지금은 배포가 안되어 플레이가 불가능 합니다..
 
 
 

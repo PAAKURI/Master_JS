@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://2ebfvep7rkt"]
 
-[ext_resource type="Script" uid="uid://l8b6mh2kici7" path="res://Start.cs" id="1_start"]
+[ext_resource type="Script" uid="uid://l8b6mh2kici7" path="res://scripts/Start.cs" id="1_start"]
 [ext_resource type="Texture2D" uid="uid://cwmcm5ce6x152" path="res://resources/marketing.png" id="2_marketing"]
 
 [sub_resource type="Shader" id="Shader_background"]

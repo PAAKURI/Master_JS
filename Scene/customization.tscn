@@ -1,8 +1,8 @@
 [gd_scene load_steps=9 format=3]
 
-[ext_resource type="Script" path="res://CustomizationMenu.cs" id="1_script"]
+[ext_resource type="Script" path="res://scripts/CustomizationMenu.cs" id="1_script"]
 [ext_resource type="Theme" path="res://resources/ui_menu_theme.tres" id="2_theme"]
-[ext_resource type="Script" path="res://CustomizationPreview.cs" id="3_preview"]
+[ext_resource type="Script" path="res://scripts/CustomizationPreview.cs" id="3_preview"]
 [ext_resource type="PackedScene" path="res://Scene/player.tscn" id="4_player"]
 
 [sub_resource type="Shader" id="Shader_background"]

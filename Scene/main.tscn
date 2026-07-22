@@ -1,11 +1,11 @@
 [gd_scene format=3 uid="uid://dbfcu52kegab7"]
 
 [ext_resource type="Texture2D" uid="uid://c5cpvgenog5p" path="res://resources/map_a.png" id="1_map"]
-[ext_resource type="Script" uid="uid://rbwo7o6h5w0p" path="res://GameManager.cs" id="2_game"]
+[ext_resource type="Script" uid="uid://rbwo7o6h5w0p" path="res://scripts/GameManager.cs" id="2_game"]
 [ext_resource type="PackedScene" uid="uid://ucmtme1xn70i" path="res://Scene/player.tscn" id="3_player"]
-[ext_resource type="Script" uid="uid://darydi1p8ovve" path="res://CameraShake.cs" id="4_camera"]
-[ext_resource type="Script" uid="uid://dlroy0pv44xok" path="res://DamageOverlay.cs" id="5_damage"]
-[ext_resource type="Script" uid="uid://dkicakwqs4f3u" path="res://GameOverPanel.cs" id="6_game_over"]
+[ext_resource type="Script" uid="uid://darydi1p8ovve" path="res://scripts/CameraShake.cs" id="4_camera"]
+[ext_resource type="Script" uid="uid://dlroy0pv44xok" path="res://scripts/DamageOverlay.cs" id="5_damage"]
+[ext_resource type="Script" uid="uid://dkicakwqs4f3u" path="res://scripts/GameOverPanel.cs" id="6_game_over"]
 
 [sub_resource type="Shader" id="Shader_damage_edges"]
 code = "shader_type canvas_item;

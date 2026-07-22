@@ -1,6 +1,6 @@
 [gd_scene load_steps=7 format=3]
 
-[ext_resource type="Script" path="res://MultiplayerMenu.cs" id="1_script"]
+[ext_resource type="Script" path="res://scripts/MultiplayerMenu.cs" id="1_script"]
 [ext_resource type="Theme" path="res://resources/ui_menu_theme.tres" id="2_theme"]
 
 [sub_resource type="Shader" id="Shader_background"]

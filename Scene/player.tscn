@@ -1,11 +1,11 @@
 [gd_scene format=3 uid="uid://ucmtme1xn70i"]
 
-[ext_resource type="Script" uid="uid://cirkg5py05pmc" path="res://Player.cs" id="1_player"]
+[ext_resource type="Script" uid="uid://cirkg5py05pmc" path="res://scripts/Player.cs" id="1_player"]
 [ext_resource type="Texture2D" uid="uid://dda4ndsuqn7dm" path="res://resources/player_head.svg" id="2_head"]
 [ext_resource type="Texture2D" uid="uid://dudtx5lgfg1qt" path="res://resources/player_tuck.svg" id="3_tuck"]
 [ext_resource type="Texture2D" uid="uid://b7l205n36k264" path="res://resources/player_left_leg.svg" id="4_left_leg"]
 [ext_resource type="Texture2D" uid="uid://i5cwoqo0pkwl" path="res://resources/player_right_leg.svg" id="5_right_leg"]
-[ext_resource type="Script" uid="uid://bfmmhvp78tke5" path="res://EyeBall.cs" id="6_eye"]
+[ext_resource type="Script" uid="uid://bfmmhvp78tke5" path="res://scripts/EyeBall.cs" id="6_eye"]
 [ext_resource type="Texture2D" path="res://resources/parry_cooldown.svg" id="7_parry_cooldown"]
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_ivevv"]

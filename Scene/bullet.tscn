@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://vtohqldyiah4"]
 
-[ext_resource type="Script" uid="uid://dy3o4xoxtftwf" path="res://Bullet.cs" id="1_bullet"]
+[ext_resource type="Script" uid="uid://dy3o4xoxtftwf" path="res://scripts/Bullet.cs" id="1_bullet"]
 
 [sub_resource type="Curve" id="Curve_trail_width"]
 _data = [Vector2(0, 0.05), 0.0, 0.0, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]

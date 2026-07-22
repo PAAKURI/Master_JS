@@ -83,8 +83,7 @@ text = "멀티 방 생성"
 custom_minimum_size = Vector2(0, 58)
 layout_mode = 2
 theme_override_font_sizes/font_size = 22
-placeholder_text = "방 코드 (예: 127.0.0.1:24872)"
-text = "127.0.0.1:24872"
+placeholder_text = "호스트 LAN 주소 (예: 192.168.x.x:24872)"
 
 [node name="JoinButton" type="Button" parent="Content"]
 custom_minimum_size = Vector2(0, 64)

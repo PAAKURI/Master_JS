@@ -1,4 +1,7 @@
 using System;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using Godot;
 
 public partial class NetworkSession : Node
@@ -19,6 +22,8 @@ public partial class NetworkSession : Node
     public bool RemoteReady { get; private set; }
     public long RemotePeerId { get; private set; }
     public string Status { get; private set; } = "AI 대전을 선택하거나 방을 생성하세요.";
+    public string LocalLanAddress { get; private set; } = "127.0.0.1";
+    public string HostRoomCode { get; private set; } = string.Empty;
 
     public event Action? LobbyChanged;
     public event Action<PlayerCommand>? RemoteInputReceived;
@@ -30,6 +35,7 @@ public partial class NetworkSession : Node
     public override void _Ready()
     {
         Instance = this;
+        LocalLanAddress = FindLanIpv4Address();
         Multiplayer.PeerConnected += OnPeerConnected;
         Multiplayer.PeerDisconnected += OnPeerDisconnected;
         Multiplayer.ConnectedToServer += OnConnectedToServer;
@@ -41,6 +47,8 @@ public partial class NetworkSession : Node
                 _autoReady = true;
             else if (argument == "--paakuri-host")
                 Host();
+            else if (argument.StartsWith("--paakuri-host=") && int.TryParse(argument["--paakuri-host=".Length..], out var hostPort))
+                Host(Mathf.Clamp(hostPort, 1024, 65535));
             else if (argument.StartsWith("--paakuri-join="))
                 Join(argument["--paakuri-join=".Length..]);
             else if (argument == "--paakuri-ai")
@@ -58,19 +66,33 @@ public partial class NetworkSession : Node
     public Error Host(int port = DefaultPort)
     {
         Disconnect();
-        var peer = new ENetMultiplayerPeer();
-        var error = peer.CreateServer(port, MaxClients, 3);
-        if (error != Error.Ok)
+        ENetMultiplayerPeer? peer = null;
+        var error = Error.CantCreate;
+        var selectedPort = port;
+        for (var offset = 0; offset < 10; offset++)
         {
-            SetStatus($"방 생성 실패: {error}");
+            selectedPort = port + offset;
+            if (!CanBindUdpPort(selectedPort))
+                continue;
+            peer = new ENetMultiplayerPeer();
+            error = peer.CreateServer(selectedPort, MaxClients, 3);
+            if (error == Error.Ok)
+                break;
+            peer.Close();
+            peer = null;
+        }
+        if (error != Error.Ok || peer is null)
+        {
+            SetStatus($"UDP {port}~{port + 9} 방 생성 실패: {error}");
             return error;
         }
 
         Multiplayer.MultiplayerPeer = peer;
         Mode = SessionMode.Host;
         ConnectionActive = true;
-        GD.Print($"PAAKURI host listening on UDP {port}");
-        SetStatus($"방 코드: 127.0.0.1:{port} (LAN에서는 호스트 IP 사용) — 참가자 대기 중");
+        HostRoomCode = $"{LocalLanAddress}:{selectedPort}";
+        GD.Print($"PAAKURI host listening on UDP {selectedPort}; LAN room code {HostRoomCode}");
+        SetStatus($"LAN 방 코드: {HostRoomCode} — 같은 공유기의 참가자 대기 중");
         return Error.Ok;
     }
 
@@ -141,6 +163,7 @@ public partial class NetworkSession : Node
         LocalReady = false;
         RemoteReady = false;
         RemotePeerId = 0;
+        HostRoomCode = string.Empty;
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
@@ -234,5 +257,62 @@ public partial class NetworkSession : Node
         if (string.IsNullOrWhiteSpace(address))
             address = "127.0.0.1";
         port = Mathf.Clamp(port, 1024, 65535);
+    }
+
+    private static string FindLanIpv4Address()
+    {
+        try
+        {
+            foreach (var network in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (network.OperationalStatus != OperationalStatus.Up ||
+                    network.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel)
+                    continue;
+                var properties = network.GetIPProperties();
+                var hasIpv4Gateway = false;
+                foreach (var gateway in properties.GatewayAddresses)
+                {
+                    if (gateway.Address.AddressFamily == AddressFamily.InterNetwork && !gateway.Address.Equals(IPAddress.Any))
+                    {
+                        hasIpv4Gateway = true;
+                        break;
+                    }
+                }
+                if (!hasIpv4Gateway)
+                    continue;
+                foreach (var unicast in properties.UnicastAddresses)
+                {
+                    var address = unicast.Address;
+                    if (address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address))
+                        return address.ToString();
+                }
+            }
+        }
+        catch (NetworkInformationException error)
+        {
+            GD.PushWarning($"LAN 주소 자동 감지 실패: {error.Message}");
+        }
+
+        foreach (var candidate in IP.GetLocalAddresses())
+            if (IPAddress.TryParse(candidate, out var address) && address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address))
+                return candidate;
+        return "127.0.0.1";
+    }
+
+    private static bool CanBindUdpPort(int port)
+    {
+        try
+        {
+            using var socket = new Socket(AddressFamily.InterNetworkV6, SocketType.Dgram, ProtocolType.Udp)
+            {
+                DualMode = true
+            };
+            socket.Bind(new IPEndPoint(IPAddress.IPv6Any, port));
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
     }
 }

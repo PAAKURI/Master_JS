@@ -113,7 +113,6 @@ public partial class Player : CharacterBody2D
         {
             GlobalPosition = GlobalPosition.Lerp(_replicaPosition, Mathf.Min(delta * 18.0f, 1.0f));
             Velocity = _replicaVelocity;
-            UpdateVisuals();
             UpdateLegs(delta);
             return;
         }

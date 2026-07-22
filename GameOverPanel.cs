@@ -14,16 +14,37 @@ public partial class GameOverPanel : Control
 		_score = GetNode<Label>("Panel/Content/Score");
 		_restartButton.Pressed += () => RestartRequested?.Invoke();
 		GetNode<Button>("Panel/Content/TitleButton").Pressed +=
-			() => GetTree().ChangeSceneToFile("res://Scene/start.tscn");
+			() =>
+			{
+				if (NetworkSession.Instance.IsNetworkGame)
+					NetworkSession.Instance.ReturnToLobby("타이틀로 돌아왔습니다.");
+				else
+					GetTree().ChangeSceneToFile("res://Scene/start.tscn");
+			};
 		GetNode<Button>("Panel/Content/QuitButton").Pressed += () => GetTree().Quit();
+		NetworkSession.Instance.LobbyChanged += UpdateRestartButton;
+	}
+
+	public override void _ExitTree()
+	{
+		NetworkSession.Instance.LobbyChanged -= UpdateRestartButton;
 	}
 
 	public void ShowResult(int winnerId,  int playerOneWins, int playerTwoWins)
 	{
 		_title.Text = $"PLAYER {winnerId} WINS";
 		_score.Text = $"{playerOneWins}  :  {playerTwoWins}";
-		_restartButton.Disabled = NetworkSession.Instance.IsClient;
+		UpdateRestartButton();
 		Show();
 		_restartButton.GrabFocus();
+	}
+
+	private void UpdateRestartButton()
+	{
+		var session = NetworkSession.Instance;
+		_restartButton.Disabled = session.IsClient && !session.IsDedicatedClient;
+		_restartButton.Text = session.IsDedicatedClient
+			? session.LocalReady ? "REMATCH READY ✓" : "REMATCH READY"
+			: "RESTART";
 	}
 }

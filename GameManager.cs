@@ -9,11 +9,12 @@ public partial class GameManager : Node2D
     private const float RoundEndDuration = 3.0f;
     private const int WinsRequired = 2;
     private const float SnapshotInterval = 1.0f / 30.0f;
-    private const int SnapshotVersion = 2;
+    private const int SnapshotVersion = 3;
 
     private enum GameState { Countdown, Playing, RoundEnd, MatchEnd, Result }
 
     private readonly record struct MapDefinition(string Path, Vector2 PlayerOneSpawn, Vector2 PlayerTwoSpawn);
+    private sealed record MapResource(Texture2D Texture, Vector2 ImageSize, Vector2[][] CollisionPolygons);
 
     private static readonly MapDefinition[] Maps =
     {
@@ -39,6 +40,8 @@ public partial class GameManager : Node2D
         (new Color(0.01f, 0.1f, 0.15f), new Color(0.25f, 1.7f, 1.6f))
     };
 
+    private static readonly Dictionary<string, MapResource> MapCache = new();
+
     private Player _playerOne = null!;
     private Player _playerTwo = null!;
     private StaticBody2D _arena = null!;
@@ -53,12 +56,16 @@ public partial class GameManager : Node2D
     private float _fightMessageTime;
     private int _playerOneWins;
     private int _playerTwoWins;
-    private int _roundPaletteIndex;
     private bool _deathResolutionQueued;
     private NetworkSession _session = null!;
     private float _snapshotTime;
     private int _currentMapIndex = -1;
+    private uint _roundId;
+    private uint _lastAppliedRoundId;
+    private uint _serverTick;
     private bool _clientResultShown;
+    private bool _headless;
+    private Player? _localPlayer;
     private readonly Dictionary<int, Bullet> _replicaBullets = new();
 
     public override void _Ready()
@@ -73,18 +80,32 @@ public partial class GameManager : Node2D
         _resultPanel = GetNode<GameOverPanel>("GameOverLayer/GameOverPanel");
         _resultPanel.RestartRequested += OnRestartRequested;
         _session = NetworkSession.Instance;
+        _headless = DisplayServer.GetName() == "headless" || _session.IsDedicatedServer;
         GD.Print($"PAAKURI GameManager ready: {_session.Mode}");
 
-        GetViewport().UseHdr2D = true;
-        AddChild(new WorldEnvironment
+        if (!_headless)
         {
-            Environment = new Godot.Environment
+            GetViewport().UseHdr2D = true;
+            AddChild(new WorldEnvironment
             {
-                GlowEnabled = true,
-                GlowIntensity = 1.25f,
-                GlowHdrThreshold = 1.1f
-            }
-        });
+                Environment = new Godot.Environment
+                {
+                    GlowEnabled = true,
+                    GlowIntensity = 1.25f,
+                    GlowHdrThreshold = 1.1f
+                }
+            });
+        }
+        else
+        {
+            _background.Visible = false;
+            _mapVisual.Visible = false;
+            GetNode<CanvasLayer>("HUD").Visible = false;
+            GetNode<CanvasLayer>("DamageOverlayLayer").Visible = false;
+            GetNode<CanvasLayer>("GameOverLayer").Visible = false;
+            _playerOne.SetVisualsEnabled(false);
+            _playerTwo.SetVisualsEnabled(false);
+        }
 
         _playerOne.SetTarget(_playerTwo);
         _playerTwo.SetTarget(_playerOne);
@@ -96,13 +117,26 @@ public partial class GameManager : Node2D
             _playerTwo.UsesRemoteInput = true;
             _session.RemoteInputReceived += OnRemoteInputReceived;
         }
+        else if (_session.IsDedicatedServer)
+        {
+            _playerOne.IsBot = false;
+            _playerTwo.IsBot = false;
+            _playerOne.UsesRemoteInput = true;
+            _playerTwo.UsesRemoteInput = true;
+            _session.RemoteInputReceived += OnRemoteInputReceived;
+        }
         else if (_session.IsClient)
         {
+            _playerOne.IsBot = false;
             _playerTwo.IsBot = false;
-            _playerOne.IsNetworkReplica = true;
-            _playerTwo.IsNetworkReplica = true;
+            _localPlayer = _session.LocalPlayerSlot == 1 ? _playerOne : _playerTwo;
+            var remotePlayer = _session.LocalPlayerSlot == 1 ? _playerTwo : _playerOne;
+            _localPlayer.UsesRemoteInput = true;
+            _localPlayer.IsPredictedLocal = true;
+            remotePlayer.IsNetworkReplica = true;
             _session.SnapshotReceived += OnSnapshotReceived;
         }
+        _session.RematchStarted += OnRematchStarted;
 
         if (!_session.IsClient)
             StartMatch();
@@ -114,13 +148,14 @@ public partial class GameManager : Node2D
             return;
         _session.RemoteInputReceived -= OnRemoteInputReceived;
         _session.SnapshotReceived -= OnSnapshotReceived;
+        _session.RematchStarted -= OnRematchStarted;
         _resultPanel.RestartRequested -= OnRestartRequested;
     }
 
     public override void _Process(double deltaValue)
     {
         var delta = (float)deltaValue;
-        if (Input.IsActionJustPressed("open_menu"))
+        if (!_headless && Input.IsActionJustPressed("open_menu"))
         {
             if (_session.IsNetworkGame)
                 _session.ReturnToLobby("방에서 나왔습니다.");
@@ -128,12 +163,11 @@ public partial class GameManager : Node2D
                 GetTree().ChangeSceneToFile("res://Scene/start.tscn");
             return;
         }
-        if (Input.IsActionJustPressed("restart_match") && !_session.IsClient)
+        if (!_headless && Input.IsActionJustPressed("restart_match") && !_session.IsClient)
             StartMatch();
 
         if (_session.IsClient)
         {
-            _session.SendInput(_playerTwo.CaptureLocalCommand());
             UpdateHud();
             return;
         }
@@ -153,8 +187,21 @@ public partial class GameManager : Node2D
                 break;
         }
         UpdateHud();
-        if (_session.IsHost)
+    }
+
+    public override void _PhysicsProcess(double deltaValue)
+    {
+        var delta = (float)deltaValue;
+        if (_session.IsClient && _localPlayer is not null)
         {
+            var command = _session.SendInput(_localPlayer.CaptureLocalCommand());
+            if (command.Sequence != 0)
+                _localPlayer.EnqueueCommand(command);
+            return;
+        }
+        if (_session.IsAuthority)
+        {
+            _serverTick++;
             _snapshotTime -= delta;
             if (_snapshotTime <= 0.0f)
             {
@@ -175,9 +222,9 @@ public partial class GameManager : Node2D
     private void BeginRound()
     {
         ClearBullets();
-        var palette = RoundPalettes[_roundPaletteIndex++ % RoundPalettes.Length];
-        _background.Color = palette.Background;
-        _mapVisual.Modulate = palette.Map;
+        _roundId++;
+        if (!_headless)
+            ApplyLocalPalette(_roundId);
         _currentMapIndex = (int)(GD.Randi() % Maps.Length);
         var map = Maps[_currentMapIndex];
         LoadMap(map);
@@ -265,6 +312,8 @@ public partial class GameManager : Node2D
         _messageLabel.Text = string.Empty;
         _resultPanel.ShowResult(winner, _playerOneWins, _playerTwoWins);
         _state = GameState.Result;
+        if (_session.IsDedicatedServer)
+            _session.BeginRematchLobby();
     }
 
     private void SetCombatEnabled(bool enabled)
@@ -286,17 +335,18 @@ public partial class GameManager : Node2D
             }
         }
 
-        var texture = GD.Load<Texture2D>(map.Path);
-        _mapVisual.Texture = texture;
-        var imageSize = texture.GetSize();
+        var resource = GetMapResource(map.Path);
+        if (resource is null)
+            return;
+        var texture = resource.Texture;
+        var imageSize = resource.ImageSize;
         var scale = Mathf.Min(1920.0f / imageSize.X, 1080.0f / imageSize.Y);
         _mapVisual.Position = new Vector2(960.0f, 540.0f);
         _mapVisual.Scale = Vector2.One * scale;
+        if (!_headless)
+            _mapVisual.Texture = texture;
 
-        using var bitmap = new Bitmap();
-        bitmap.CreateFromImageAlpha(texture.GetImage(), 0.1f);
-        var rect = new Rect2I(Vector2I.Zero, bitmap.GetSize());
-        foreach (var polygon in bitmap.OpaqueToPolygons(rect, 2.0f))
+        foreach (var polygon in resource.CollisionPolygons)
         {
             var collision = new CollisionPolygon2D
             {
@@ -308,6 +358,37 @@ public partial class GameManager : Node2D
         }
     }
 
+    private static MapResource? GetMapResource(string path)
+    {
+        if (MapCache.TryGetValue(path, out var cached))
+            return cached;
+        var texture = GD.Load<Texture2D>(path);
+        if (texture is null)
+        {
+            GD.PushError($"Map texture load failed: {path}");
+            return null;
+        }
+        using var bitmap = new Bitmap();
+        bitmap.CreateFromImageAlpha(texture.GetImage(), 0.1f);
+        var polygons = new List<Vector2[]>();
+        var rect = new Rect2I(Vector2I.Zero, bitmap.GetSize());
+        foreach (var polygon in bitmap.OpaqueToPolygons(rect, 2.0f))
+            polygons.Add(polygon);
+        var resource = new MapResource(texture, texture.GetSize(), polygons.ToArray());
+        MapCache[path] = resource;
+        return resource;
+    }
+
+    private void ApplyLocalPalette(uint roundId)
+    {
+        var peerSalt = _session.IsNetworkGame ? (uint)Multiplayer.GetUniqueId() : 0u;
+        var index = (int)((roundId * 2654435761u ^ peerSalt * 2246822519u) % (uint)RoundPalettes.Length);
+        var palette = RoundPalettes[index];
+        _background.Color = palette.Background;
+        _mapVisual.Modulate = palette.Map;
+        _lastAppliedRoundId = roundId;
+    }
+
     private void ClearBullets()
     {
         foreach (var node in GetTree().GetNodesInGroup("bullets"))
@@ -315,11 +396,27 @@ public partial class GameManager : Node2D
         _replicaBullets.Clear();
     }
 
-    private void OnRemoteInputReceived(PlayerCommand command) => _playerTwo.SetRemoteCommand(command);
+    private void OnRemoteInputReceived(int playerSlot, PlayerCommand command)
+    {
+        if (playerSlot == 1)
+            _playerOne.EnqueueCommand(command);
+        else if (playerSlot == 2)
+            _playerTwo.EnqueueCommand(command);
+    }
 
     private void OnRestartRequested()
     {
-        if (!_session.IsClient)
+        if (_session.IsDedicatedClient)
+            _session.ToggleReady();
+        else if (!_session.IsClient)
+            StartMatch();
+    }
+
+    private void OnRematchStarted()
+    {
+        _clientResultShown = false;
+        _resultPanel.Hide();
+        if (_session.IsAuthority)
             StartMatch();
     }
 
@@ -328,6 +425,8 @@ public partial class GameManager : Node2D
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
         writer.Write(SnapshotVersion);
+        writer.Write(_serverTick);
+        writer.Write(_roundId);
         writer.Write((int)_state);
         writer.Write(_stateTime);
         writer.Write(_currentMapIndex);
@@ -350,6 +449,8 @@ public partial class GameManager : Node2D
             WriteVector(writer, bullet.LinearVelocity);
             writer.Write(bullet.OwnerPlayerId);
             count++;
+            if (count >= 64)
+                break;
         }
         var endPosition = stream.Position;
         stream.Position = countPosition;
@@ -360,6 +461,7 @@ public partial class GameManager : Node2D
 
     private static void WritePlayer(BinaryWriter writer, Player player)
     {
+        writer.Write(player.LastProcessedInputSequence);
         WriteVector(writer, player.GlobalPosition);
         WriteVector(writer, player.Velocity);
         WriteVector(writer, player.AimDirection);
@@ -386,6 +488,8 @@ public partial class GameManager : Node2D
             using var reader = new BinaryReader(stream);
             if (reader.ReadInt32() != SnapshotVersion)
                 return;
+            var serverTick = reader.ReadUInt32();
+            var roundId = reader.ReadUInt32();
             _state = (GameState)reader.ReadInt32();
             _stateTime = reader.ReadSingle();
             var mapIndex = reader.ReadInt32();
@@ -397,9 +501,18 @@ public partial class GameManager : Node2D
                 _currentMapIndex = mapIndex;
                 LoadMap(Maps[mapIndex]);
             }
-            ReadPlayer(reader, _playerOne);
-            ReadPlayer(reader, _playerTwo);
+            if (roundId != _lastAppliedRoundId && !_headless)
+                ApplyLocalPalette(roundId);
+            _roundId = roundId;
+            ReadPlayer(reader, serverTick, _playerOne);
+            ReadPlayer(reader, serverTick, _playerTwo);
             ReadBullets(reader);
+            var playing = _state == GameState.Playing;
+            if (_localPlayer is not null)
+            {
+                _localPlayer.InputEnabled = playing;
+                _localPlayer.CombatEnabled = false;
+            }
 
             if (_state == GameState.Result && !_clientResultShown)
             {
@@ -413,14 +526,15 @@ public partial class GameManager : Node2D
                 _resultPanel.Hide();
             }
         }
-        catch (EndOfStreamException error)
+        catch (IOException error)
         {
             GD.PushWarning($"잘린 네트워크 스냅샷을 무시했습니다: {error.Message}");
         }
     }
 
-    private static void ReadPlayer(BinaryReader reader, Player player)
+    private void ReadPlayer(BinaryReader reader, uint serverTick, Player player)
     {
+        var acknowledgedSequence = reader.ReadUInt32();
         var position = ReadVector(reader);
         var velocity = ReadVector(reader);
         var aim = ReadVector(reader);
@@ -431,7 +545,15 @@ public partial class GameManager : Node2D
         var alive = reader.ReadBoolean();
         var onFloor = reader.ReadBoolean();
         var onWall = reader.ReadBoolean();
-        player.ApplyNetworkState(position, velocity, aim, health, ammo, reload, parryCooldown, alive, onFloor, onWall);
+        if (player == _localPlayer)
+        {
+            _session.AcknowledgeInputs(acknowledgedSequence);
+            player.ReconcileNetworkState(acknowledgedSequence, position, velocity, aim, health, ammo, reload, parryCooldown, alive, onFloor, onWall);
+        }
+        else
+        {
+            player.ApplyNetworkState(serverTick, position, velocity, aim, health, ammo, reload, parryCooldown, alive, onFloor, onWall);
+        }
     }
 
     private void ReadBullets(BinaryReader reader)

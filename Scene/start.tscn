@@ -1,9 +1,9 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene format=3 uid="uid://2ebfvep7rkt"]
 
-[ext_resource type="Script" path="res://Start.cs" id="1_start"]
-[ext_resource type="Texture2D" path="res://resources/marketing.png" id="2_marketing"]
+[ext_resource type="Script" uid="uid://l8b6mh2kici7" path="res://Start.cs" id="1_start"]
+[ext_resource type="Texture2D" uid="uid://b5c10yf7btpfj" path="res://resources/marketing.png" id="2_marketing"]
 
-[node name="Start" type="Control"]
+[node name="Start" type="Control" unique_id=1685830006]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -12,7 +12,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_start")
 
-[node name="Background" type="TextureRect" parent="."]
+[node name="Background" type="TextureRect" parent="." unique_id=1321432212]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -24,7 +24,7 @@ texture = ExtResource("2_marketing")
 expand_mode = 1
 stretch_mode = 6
 
-[node name="Shade" type="ColorRect" parent="."]
+[node name="Shade" type="ColorRect" parent="." unique_id=529236001]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -34,7 +34,7 @@ grow_vertical = 2
 mouse_filter = 2
 color = Color(0.015, 0.025, 0.08, 0.42)
 
-[node name="Content" type="VBoxContainer" parent="."]
+[node name="Content" type="VBoxContainer" parent="." unique_id=1852823316]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -42,64 +42,47 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -230.0
-offset_top = -390.0
+offset_top = -310.0
 offset_right = 230.0
-offset_bottom = 390.0
+offset_bottom = 470.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 34
 alignment = 1
 
-[node name="Title" type="Label" parent="Content"]
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.9, 0.25, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.8)
-theme_override_constants/shadow_offset_x = 4
-theme_override_constants/shadow_offset_y = 4
-theme_override_font_sizes/font_size = 76
-text = "PAAKURI"
-horizontal_alignment = 1
-
-[node name="Subtitle" type="Label" parent="Content"]
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 22
-text = "AI / HOST-AUTHORITATIVE P2P"
-horizontal_alignment = 1
-
-[node name="AiButton" type="Button" parent="Content"]
+[node name="AiButton" type="Button" parent="Content" unique_id=768291066]
 custom_minimum_size = Vector2(0, 72)
 layout_mode = 2
 theme_override_font_sizes/font_size = 30
 text = "AI 대전"
 
-[node name="HostButton" type="Button" parent="Content"]
+[node name="HostButton" type="Button" parent="Content" unique_id=389640218]
 custom_minimum_size = Vector2(0, 64)
 layout_mode = 2
 theme_override_font_sizes/font_size = 26
 text = "멀티 방 생성"
 
-[node name="RoomCode" type="LineEdit" parent="Content"]
+[node name="RoomCode" type="LineEdit" parent="Content" unique_id=193456769]
 custom_minimum_size = Vector2(0, 58)
 layout_mode = 2
 theme_override_font_sizes/font_size = 22
-placeholder_text = "방 코드 (예: 127.0.0.1:24872)"
 text = "127.0.0.1:24872"
+placeholder_text = "방 코드 (예: 127.0.0.1:24872)"
 
-[node name="JoinButton" type="Button" parent="Content"]
+[node name="JoinButton" type="Button" parent="Content" unique_id=1139581105]
 custom_minimum_size = Vector2(0, 64)
 layout_mode = 2
 theme_override_font_sizes/font_size = 26
 text = "멀티 참가"
 
-[node name="ReadyButton" type="Button" parent="Content"]
+[node name="ReadyButton" type="Button" parent="Content" unique_id=606955727]
 custom_minimum_size = Vector2(0, 58)
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
 disabled = true
 text = "READY"
 
-[node name="Status" type="Label" parent="Content"]
+[node name="Status" type="Label" parent="Content" unique_id=1326177385]
 custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
@@ -107,7 +90,7 @@ text = "AI 대전을 선택하거나 방을 생성하세요."
 horizontal_alignment = 1
 autowrap_mode = 2
 
-[node name="QuitButton" type="Button" parent="Content"]
+[node name="QuitButton" type="Button" parent="Content" unique_id=1331261450]
 custom_minimum_size = Vector2(0, 72)
 layout_mode = 2
 theme_override_font_sizes/font_size = 30

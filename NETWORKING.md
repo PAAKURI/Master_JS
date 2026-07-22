@@ -27,7 +27,7 @@ Both dedicated clients press READY to start. After a match, both press REMATCH R
 - The local client player predicts movement immediately and reconciles against the server ACK. Remote players render 100 ms behind with interpolation and at most 100 ms of extrapolation.
 - Projectile fire is compensated by half of ENet RTT, capped at 100 ms. A ray cast preserves wall, hit, and parry checks during the compensated segment.
 
-`ProtocolVersion` is 3 and `MapCatalogVersion` is 1. The server sends only `MapId` and `RoundId`; each client chooses its own map/background palette. Collision polygons are derived from the shared map catalog and cached locally after the first load.
+`ProtocolVersion` is 5 and `MapCatalogVersion` is 1. The server sends only `MapId` and `RoundId`; each client chooses its own map/background palette. Collision polygons are derived from the shared map catalog and cached locally after the first load.
 
 ## Verification
 

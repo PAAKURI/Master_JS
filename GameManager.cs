@@ -9,7 +9,7 @@ public partial class GameManager : Node2D
     private const float RoundEndDuration = 3.0f;
     private const int WinsRequired = 2;
     private const float SnapshotInterval = 1.0f / 30.0f;
-    private const int SnapshotVersion = 3;
+    private const int SnapshotVersion = 5;
 
     private enum GameState { Countdown, Playing, RoundEnd, MatchEnd, Result }
 
@@ -50,6 +50,7 @@ public partial class GameManager : Node2D
     private Label _scoreLabel = null!;
     private Label _messageLabel = null!;
     private GameOverPanel _resultPanel = null!;
+    private CameraShake _cameraShake = null!;
 
     private GameState _state;
     private float _stateTime;
@@ -63,6 +64,11 @@ public partial class GameManager : Node2D
     private uint _roundId;
     private uint _lastAppliedRoundId;
     private uint _serverTick;
+    private uint _lastCameraShakeSequence;
+    private uint _bulletImpactSequence;
+    private uint _lastBulletImpactSequence;
+    private Vector2 _lastBulletImpactPosition;
+    private Vector2 _lastBulletImpactNormal;
     private bool _clientResultShown;
     private bool _headless;
     private Player? _localPlayer;
@@ -70,6 +76,7 @@ public partial class GameManager : Node2D
 
     public override void _Ready()
     {
+        AddToGroup("network_effects");
         _playerOne = GetNode<Player>("Player1");
         _playerTwo = GetNode<Player>("Player2");
         _arena = GetNode<StaticBody2D>("Arena");
@@ -78,6 +85,7 @@ public partial class GameManager : Node2D
         _scoreLabel = GetNode<Label>("HUD/Score");
         _messageLabel = GetNode<Label>("HUD/Message");
         _resultPanel = GetNode<GameOverPanel>("GameOverLayer/GameOverPanel");
+        _cameraShake = GetNode<CameraShake>("Camera2D");
         _resultPanel.RestartRequested += OnRestartRequested;
         _session = NetworkSession.Instance;
         _headless = DisplayServer.GetName() == "headless" || _session.IsDedicatedServer;
@@ -433,6 +441,12 @@ public partial class GameManager : Node2D
         writer.Write(_playerOneWins);
         writer.Write(_playerTwoWins);
         writer.Write(_messageLabel.Text ?? string.Empty);
+        writer.Write(_cameraShake.EventSequence);
+        writer.Write(_cameraShake.CurrentStrength);
+        writer.Write(_cameraShake.RemainingTime);
+        writer.Write(_bulletImpactSequence);
+        WriteVector(writer, _lastBulletImpactPosition);
+        WriteVector(writer, _lastBulletImpactNormal);
         WritePlayer(writer, _playerOne);
         WritePlayer(writer, _playerTwo);
 
@@ -462,6 +476,7 @@ public partial class GameManager : Node2D
     private static void WritePlayer(BinaryWriter writer, Player player)
     {
         writer.Write(player.LastProcessedInputSequence);
+        writer.Write(player.ShootSequence);
         WriteVector(writer, player.GlobalPosition);
         WriteVector(writer, player.Velocity);
         WriteVector(writer, player.AimDirection);
@@ -490,12 +505,34 @@ public partial class GameManager : Node2D
                 return;
             var serverTick = reader.ReadUInt32();
             var roundId = reader.ReadUInt32();
+            var roundChanged = roundId != _roundId;
             _state = (GameState)reader.ReadInt32();
             _stateTime = reader.ReadSingle();
             var mapIndex = reader.ReadInt32();
             _playerOneWins = reader.ReadInt32();
             _playerTwoWins = reader.ReadInt32();
             _messageLabel.Text = reader.ReadString();
+            var cameraShakeSequence = reader.ReadUInt32();
+            var cameraShakeStrength = reader.ReadSingle();
+            var cameraShakeTime = reader.ReadSingle();
+            if (cameraShakeSequence != _lastCameraShakeSequence)
+            {
+                _lastCameraShakeSequence = cameraShakeSequence;
+                if (cameraShakeStrength > 0.0f && cameraShakeTime > 0.0f)
+                    _cameraShake.ApplyNetworkShake(cameraShakeStrength, cameraShakeTime);
+            }
+            var bulletImpactSequence = reader.ReadUInt32();
+            var bulletImpactPosition = ReadVector(reader);
+            var bulletImpactNormal = ReadVector(reader);
+            if (bulletImpactSequence != _lastBulletImpactSequence)
+            {
+                _lastBulletImpactSequence = bulletImpactSequence;
+                if (bulletImpactSequence != 0 && bulletImpactPosition.IsFinite() && bulletImpactNormal.IsFinite() &&
+                    bulletImpactNormal.LengthSquared() > 0.01f)
+                {
+                    Bullet.SpawnImpactEffect(this, bulletImpactPosition, bulletImpactNormal.Normalized());
+                }
+            }
             if (mapIndex >= 0 && mapIndex < Maps.Length && mapIndex != _currentMapIndex)
             {
                 _currentMapIndex = mapIndex;
@@ -504,8 +541,8 @@ public partial class GameManager : Node2D
             if (roundId != _lastAppliedRoundId && !_headless)
                 ApplyLocalPalette(roundId);
             _roundId = roundId;
-            ReadPlayer(reader, serverTick, _playerOne);
-            ReadPlayer(reader, serverTick, _playerTwo);
+            ReadPlayer(reader, serverTick, _playerOne, roundChanged);
+            ReadPlayer(reader, serverTick, _playerTwo, roundChanged);
             ReadBullets(reader);
             var playing = _state == GameState.Playing;
             if (_localPlayer is not null)
@@ -532,9 +569,10 @@ public partial class GameManager : Node2D
         }
     }
 
-    private void ReadPlayer(BinaryReader reader, uint serverTick, Player player)
+    private void ReadPlayer(BinaryReader reader, uint serverTick, Player player, bool resetForRound)
     {
         var acknowledgedSequence = reader.ReadUInt32();
+        var shootSequence = reader.ReadUInt32();
         var position = ReadVector(reader);
         var velocity = ReadVector(reader);
         var aim = ReadVector(reader);
@@ -545,6 +583,9 @@ public partial class GameManager : Node2D
         var alive = reader.ReadBoolean();
         var onFloor = reader.ReadBoolean();
         var onWall = reader.ReadBoolean();
+        if (resetForRound)
+            player.ResetForRound(position);
+        player.ApplyNetworkShootSequence(shootSequence);
         if (player == _localPlayer)
         {
             _session.AcknowledgeInputs(acknowledgedSequence);
@@ -593,6 +634,14 @@ public partial class GameManager : Node2D
     }
 
     private static Vector2 ReadVector(BinaryReader reader) => new(reader.ReadSingle(), reader.ReadSingle());
+
+    public void record_bullet_impact(Vector2 position, Vector2 normal)
+    {
+        // ponytail: A snapshot carries only the newest cosmetic impact; use a small ring buffer only if simultaneous hits visibly disappear.
+        _bulletImpactSequence++;
+        _lastBulletImpactPosition = position;
+        _lastBulletImpactNormal = normal;
+    }
 
     private void UpdateHud()
     {

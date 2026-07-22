@@ -164,12 +164,15 @@ public partial class Bullet : RigidBody2D
 
     private void SpawnImpact(Vector2 normal)
     {
-        if (_headless)
-        {
-            QueueFree();
-            return;
-        }
+        GetTree().CallGroup("network_effects", "record_bullet_impact", GlobalPosition, normal);
         GetTree().CallGroup("camera_shake", "shake", 4.0f, 0.1f);
+        if (!_headless)
+            SpawnImpactEffect(GetTree().CurrentScene, GlobalPosition, normal);
+        QueueFree();
+    }
+
+    public static void SpawnImpactEffect(Node parent, Vector2 position, Vector2 normal)
+    {
         var impact = new CpuParticles2D
         {
             Amount = 10,
@@ -185,10 +188,9 @@ public partial class Bullet : RigidBody2D
             ScaleAmountMax = 5.0f,
             Color = new Color(1.0f, 0.55f, 0.15f, 0.9f)
         };
-        GetTree().CurrentScene.AddChild(impact);
-        impact.GlobalPosition = GlobalPosition + normal * 6.0f;
+        parent.AddChild(impact);
+        impact.GlobalPosition = position + normal * 6.0f;
         impact.Emitting = true;
-        GetTree().CreateTimer(impact.Lifetime).Timeout += impact.QueueFree;
-        QueueFree();
+        parent.GetTree().CreateTimer(impact.Lifetime).Timeout += impact.QueueFree;
     }
 }

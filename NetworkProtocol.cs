@@ -5,7 +5,7 @@ using Godot;
 
 public static class NetworkProtocol
 {
-    public const int ProtocolVersion = 3;
+    public const int ProtocolVersion = 5;
     public const int MapCatalogVersion = 1;
     public const byte InputPacketVersion = 1;
     public const int MaxInputFramesPerPacket = 8;

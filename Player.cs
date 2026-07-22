@@ -7,6 +7,7 @@ public partial class Player : CharacterBody2D
 	[Signal] public delegate void DiedEventHandler(int playerId);
 
 	private static readonly PackedScene BulletScene = GD.Load<PackedScene>("res://Scene/bullet.tscn");
+	private static readonly AudioStream ShootSound = GD.Load<AudioStream>("res://resources/shoot.mp3");
 	private static readonly Vector2 ArenaSize = new(1920.0f, 1080.0f);
 
 	private const float Speed = 400.0f;
@@ -22,6 +23,7 @@ public partial class Player : CharacterBody2D
 	private const float ShootInterval = 0.7f;
 	private const float ReloadDuration = 3.0f;
 	private const float RecoilStrength = 145.0f;
+	private const float PlayerPushSpeed = 200.0f;
 	private const float ArenaMargin = 48.0f;
 	private const float HitInvulnerability = 0.15f;
 	private const float ParryStartup = 0.05f;
@@ -38,6 +40,9 @@ public partial class Player : CharacterBody2D
 	private const int MagazineSize = 4;
 	private const double ReplicaInterpolationDelay = 0.1;
 	private const double ReplicaExtrapolationLimit = 0.1;
+	private const float PredictionDeadZone = 6.0f;
+	private const float PredictionFloorVerticalDeadZone = 12.0f;
+	private const float PredictionSnapDistance = 120.0f;
 
 	private enum ParryState { Idle, Startup, Active, Recovery }
 
@@ -62,6 +67,7 @@ public partial class Player : CharacterBody2D
 			UpdateAmmoDisplay();
 		}
 	}
+	public uint ShootSequence { get; private set; }
 	public bool IsReloading => _reloadTime > 0.0f;
 	public float ReloadProgress => IsReloading ? 1.0f - _reloadTime / ReloadDuration : 0.0f;
 	public float ParryCooldownRatio => _parryCooldown / ParryCooldownDuration;
@@ -122,10 +128,12 @@ public partial class Player : CharacterBody2D
 	private ProgressBar _reloadBar = null!;
 	private TextureProgressBar _parryCooldownIndicator = null!;
 	private Polygon2D[] _ammoIndicators = null!;
+	private AudioStreamPlayer _shootAudio = null!;
 
 	public override void _Ready()
 	{
 		AddToGroup("players");
+		CollisionMask |= CollisionLayer;
 		_bodyCollision = GetNode<CollisionShape2D>("CollisionShape2D");
 		_parryArea = GetNode<Area2D>("ParryArea");
 		_parryCollision = GetNode<CollisionShape2D>("ParryArea/CollisionShape2D");
@@ -144,6 +152,8 @@ public partial class Player : CharacterBody2D
 		_healthBar = GetNode<ProgressBar>("HealthBar");
 		_reloadBar = GetNode<ProgressBar>("ReloadBar");
 		_parryCooldownIndicator = GetNode<TextureProgressBar>("ParryCooldown");
+		_shootAudio = new AudioStreamPlayer { Stream = ShootSound };
+		AddChild(_shootAudio);
 		_ammoIndicators = new[]
 		{
 			GetNode<Polygon2D>("AmmoDisplay/Bullet1"),
@@ -182,7 +192,7 @@ public partial class Player : CharacterBody2D
 		var delta = (float)deltaValue;
 		if (IsNetworkReplica)
 		{
-			UpdateReplica(delta);
+			UpdateReplica();
 			UpdateLegs(delta);
 			return;
 		}
@@ -205,7 +215,7 @@ public partial class Player : CharacterBody2D
 
 		if (jumpPressed)
 			_jumpBuffer = JumpBufferDuration;
-		if (parryPressed && !IsPredictedLocal)
+		if (parryPressed)
 			StartParry();
 		if (shootPressed && !IsPredictedLocal)
 			TryShoot();
@@ -250,6 +260,7 @@ public partial class Player : CharacterBody2D
 		}
 
 		MoveAndSlide();
+		PushPlayers(delta);
 		KeepInsideArena();
 		UpdateLegs(delta);
 		RecordPrediction();
@@ -305,28 +316,32 @@ public partial class Player : CharacterBody2D
 		_replicaOnFloor = onFloor;
 		_replicaOnWall = onWall;
 		var predictedPosition = GlobalPosition;
-		var matched = false;
 		for (var index = 0; index < _predictionHistory.Count; index++)
 		{
 			if (_predictionHistory[index].Sequence != acknowledgedSequence)
 				continue;
 			predictedPosition = _predictionHistory[index].Position;
-			matched = true;
 			break;
 		}
 		_predictionHistory.RemoveAll(sample => sample.Sequence == acknowledgedSequence || NetworkProtocol.IsNewer(acknowledgedSequence, sample.Sequence));
 		var error = position - predictedPosition;
-		if (error.Length() > 180.0f)
+		if (onFloor && IsOnFloor() && Mathf.Abs(error.Y) < PredictionFloorVerticalDeadZone)
+			error = new Vector2(error.X, 0.0f);
+		if (error.Length() > PredictionSnapDistance)
 		{
 			GlobalPosition += error;
 			_predictionCorrection = Vector2.Zero;
 			Velocity = velocity;
 		}
-		else if (matched || error.LengthSquared() > 1.0f)
+		else if (error.Length() > PredictionDeadZone)
 		{
-			_predictionCorrection += error;
+			_predictionCorrection = error;
 			if (Velocity.DistanceTo(velocity) > 300.0f)
 				Velocity = Velocity.Lerp(velocity, 0.5f);
+		}
+		else
+		{
+			_predictionCorrection = Vector2.Zero;
 		}
 	}
 
@@ -502,6 +517,11 @@ public partial class Player : CharacterBody2D
 		_reloadTime = float.IsFinite(reloadTime) ? Mathf.Max(reloadTime, 0.0f) : 0.0f;
 		_parryCooldown = float.IsFinite(parryCooldown) ? Mathf.Max(parryCooldown, 0.0f) : 0.0f;
 		IsAlive = alive;
+		if (IsNetworkReplica)
+		{
+			var parryElapsed = ParryCooldownDuration - _parryCooldown;
+			_parryVisual.Visible = alive && parryElapsed >= ParryStartup && parryElapsed < ParryStartup + ParryActive;
+		}
 		_healthBar.Value = Health;
 	}
 
@@ -509,7 +529,7 @@ public partial class Player : CharacterBody2D
 	{
 		if (!IsPredictedLocal || _predictionCorrection.LengthSquared() < 0.01f)
 			return;
-		var step = _predictionCorrection * Mathf.Min(delta * 12.0f, 0.5f);
+		var step = _predictionCorrection * Mathf.Min(delta * 10.0f, 0.5f);
 		GlobalPosition += step;
 		_predictionCorrection -= step;
 	}
@@ -526,7 +546,7 @@ public partial class Player : CharacterBody2D
 			_predictionHistory.RemoveAt(0);
 	}
 
-	private void UpdateReplica(float delta)
+	private void UpdateReplica()
 	{
 		if (_replicaSamples.Count == 0)
 			return;
@@ -553,10 +573,7 @@ public partial class Player : CharacterBody2D
 			targetPosition = latest.Position + latest.Velocity * (float)extrapolation;
 		}
 
-		if (GlobalPosition.DistanceTo(targetPosition) > 180.0f)
-			GlobalPosition = targetPosition;
-		else
-			GlobalPosition = GlobalPosition.Lerp(targetPosition, Mathf.Min(delta * 22.0f, 1.0f));
+		GlobalPosition = targetPosition;
 		Velocity = targetVelocity;
 	}
 
@@ -673,6 +690,18 @@ public partial class Player : CharacterBody2D
 		TakeHit(50, inward);
 	}
 
+	private void PushPlayers(float delta)
+	{
+		if (!CombatEnabled)
+			return;
+		for (var index = 0; index < GetSlideCollisionCount(); index++)
+		{
+			var collision = GetSlideCollision(index);
+			if (collision.GetCollider() is Player other && other.CombatEnabled)
+				other.MoveAndCollide(-collision.GetNormal() * PlayerPushSpeed * delta);
+		}
+	}
+
 	private void TryShoot()
 	{
 		if (_shootCooldown > 0.0f || IsReloading || _parryState == ParryState.Startup || _parryState == ParryState.Active)
@@ -689,16 +718,32 @@ public partial class Player : CharacterBody2D
 		bullet.SetOwnerPlayer(this);
 		bullet.LinearVelocity = AimDirection * BulletSpeed;
 		bullet.FastForward(_inputLatencyCompensation);
-		var headPosition = _head.Position;
-		var headTween = CreateTween();
-		headTween.TweenProperty(_head, "position", headPosition + Vector2.Up * 8.0f, 0.05);
-		headTween.TweenProperty(_head, "position", headPosition, 0.08);
+		ShootSequence++;
+		PlayShootAnimation();
 		Velocity -= AimDirection * RecoilStrength;
 		Ammo--;
 		_shootCooldown = ShootInterval;
 		GetTree().CallGroup("camera_shake", "shake", 2.0f, 0.06f);
 		if (Ammo <= 0)
 			BeginReload();
+	}
+
+	public void PlayShootAnimation()
+	{
+		_shootAudio.Play();
+		var headPosition = _head.Position;
+		var headTween = CreateTween();
+		headTween.TweenProperty(_head, "position", headPosition + Vector2.Up * 8.0f, 0.05);
+		headTween.TweenProperty(_head, "position", headPosition, 0.08);
+	}
+
+	public void ApplyNetworkShootSequence(uint sequence)
+	{
+		if (sequence == ShootSequence)
+			return;
+		ShootSequence = sequence;
+		if (sequence != 0)
+			PlayShootAnimation();
 	}
 
 	private void BeginReload()
@@ -743,8 +788,9 @@ public partial class Player : CharacterBody2D
 
 	private void SetParryActive(bool active)
 	{
-		_parryArea.Monitoring = active;
-		_parryCollision.SetDeferred(CollisionShape2D.PropertyName.Disabled, !active);
+		var authoritativeActive = active && CombatEnabled;
+		_parryArea.Monitoring = authoritativeActive;
+		_parryCollision.SetDeferred(CollisionShape2D.PropertyName.Disabled, !authoritativeActive);
 		_parryVisual.Visible = active;
 	}
 

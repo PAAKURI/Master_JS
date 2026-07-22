@@ -1,0 +1,192 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://MultiplayerMenu.cs" id="1_script"]
+[ext_resource type="Theme" path="res://resources/ui_menu_theme.tres" id="2_theme"]
+
+[sub_resource type="Shader" id="Shader_background"]
+code = "shader_type canvas_item;
+
+float hash(vec2 p) {
+	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+void fragment() {
+	vec3 base = vec3(0.006, 0.014, 0.055);
+	float halo = 1.0 - smoothstep(0.0, 0.78, distance(UV, vec2(0.5, 0.48)));
+	vec2 cells = floor(UV * vec2(80.0, 46.0));
+	float stars = step(0.992, hash(cells + floor(TIME * 0.12)));
+	float scan = sin(UV.y * 780.0 + TIME) * 0.004;
+	vec3 color = base + vec3(0.018, 0.052, 0.11) * halo + vec3(0.18, 0.66, 0.95) * stars * 0.25 + scan;
+	COLOR = vec4(color, 1.0);
+}"
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_background"]
+shader = SubResource("Shader_background")
+
+[sub_resource type="SystemFont" id="SystemFont_display"]
+font_names = PackedStringArray("Bahnschrift", "Arial Black", "Noto Sans KR", "Malgun Gothic")
+font_weight = 800
+
+[sub_resource type="Theme" id="Theme_start_button"]
+
+[node name="MultiplayerMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_script")
+
+[node name="Background" type="ColorRect" parent="."]
+material = SubResource("ShaderMaterial_background")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.006, 0.014, 0.055, 1)
+
+[node name="BackButton" type="Button" parent="."]
+custom_minimum_size = Vector2(132, 52)
+layout_mode = 0
+offset_left = 48.0
+offset_top = 42.0
+offset_right = 180.0
+offset_bottom = 94.0
+theme_override_font_sizes/font_size = 17
+theme = SubResource("Theme_start_button")
+text = "BACK   ·   돌아가기"
+
+[node name="Title" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 72.0
+offset_bottom = 130.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(1, 0.84, 0.22, 1)
+theme_override_colors/font_shadow_color = Color(0.35, 0.12, 0.01, 0.9)
+theme_override_constants/shadow_offset_x = 3
+theme_override_constants/shadow_offset_y = 4
+theme_override_fonts/font = SubResource("SystemFont_display")
+theme_override_font_sizes/font_size = 42
+text = "MULTIPLAYER"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 134.0
+offset_bottom = 166.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0.49, 0.77, 0.94, 0.92)
+theme_override_font_sizes/font_size = 16
+text = "HOST-AUTHORITATIVE LAN DUEL"
+horizontal_alignment = 1
+
+[node name="Menu" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -320.0
+offset_top = -310.0
+offset_right = 320.0
+offset_bottom = 352.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 12
+
+[node name="HostButton" type="Button" parent="Menu"]
+custom_minimum_size = Vector2(640, 72)
+layout_mode = 2
+theme = SubResource("Theme_start_button")
+theme_override_font_sizes/font_size = 24
+text = "HOST   ·   방 생성"
+
+[node name="LocalLabel" type="Label" parent="Menu"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.58, 0.82, 0.95, 1)
+theme_override_font_sizes/font_size = 14
+text = "로컬 주소 · 방을 만든 뒤 친구에게 전달하세요"
+
+[node name="LocalAddress" type="LineEdit" parent="Menu"]
+custom_minimum_size = Vector2(640, 58)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+editable = false
+context_menu_enabled = true
+selecting_enabled = true
+text = "127.0.0.1:24872"
+alignment = 1
+
+[node name="Spacer" type="Control" parent="Menu"]
+custom_minimum_size = Vector2(0, 8)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="JoinLabel" type="Label" parent="Menu"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.58, 0.82, 0.95, 1)
+theme_override_font_sizes/font_size = 14
+text = "참가할 호스트 주소"
+
+[node name="JoinAddress" type="LineEdit" parent="Menu"]
+custom_minimum_size = Vector2(640, 58)
+layout_mode = 2
+placeholder_text = "예: 192.168.0.10:24872"
+clear_button_enabled = true
+alignment = 1
+
+[node name="JoinButton" type="Button" parent="Menu"]
+custom_minimum_size = Vector2(640, 72)
+layout_mode = 2
+theme = SubResource("Theme_start_button")
+theme_override_font_sizes/font_size = 24
+text = "JOIN   ·   방 참가"
+
+[node name="ReadyButton" type="Button" parent="Menu"]
+custom_minimum_size = Vector2(640, 72)
+layout_mode = 2
+disabled = true
+theme = SubResource("Theme_start_button")
+theme_override_font_sizes/font_size = 24
+text = "READY   ·   경기 준비"
+
+[node name="Status" type="Label" parent="Menu"]
+custom_minimum_size = Vector2(640, 74)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.71, 0.83, 0.94, 0.95)
+theme_override_colors/font_shadow_color = Color(0.002, 0.008, 0.03, 0.9)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 16
+text = "방을 생성하거나 호스트 주소를 입력하세요."
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Footer" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -420.0
+offset_top = -54.0
+offset_right = 420.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_colors/font_color = Color(0.42, 0.59, 0.73, 0.82)
+theme_override_font_sizes/font_size = 14
+text = "같은 공유기에서는 위 로컬 주소를 그대로 사용합니다   ·   기본 포트 UDP 24872"
+horizontal_alignment = 1

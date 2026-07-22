@@ -30,7 +30,7 @@
      inkscape:window-width="1920"
      inkscape:window-height="1057"
      inkscape:window-x="-8"
-     inkscape:window-y="-8"
+     inkscape:window_y="-8"
      inkscape:window-maximized="1"
      inkscape:current-layer="g1" />
   <g
@@ -38,8 +38,14 @@
      inkscape:label="Image"
      id="g1">
     <path
-       style="fill:#333333;fill-opacity:1"
+       id="path1"
        d="m 105.23939,164.42097 c -13.687604,-1.41849 -14.358434,-2.73934 -15.684794,-30.88331 -0.58259,-12.36194 -1.50576,-28.77626 -2.05149,-36.476259 -4.57953,-64.615318 -4.61925,-66.074529 -1.83907,-67.562434 4.82999,-2.584934 8.66076,32.747268 11.4889,105.965213 0.94903,24.5693 0.61244,24.39347 37.569344,19.62624 24.05618,-3.1031 27.17849,-3.06514 27.65975,0.33632 0.53732,3.7976 -0.58745,4.15259 -20.95307,6.61311 -25.08169,3.03029 -28.04448,3.22523 -36.18957,2.38112 z"
-       id="path1" />
+       fill="#ffffff"
+       fill-opacity="1"
+       stroke="#ffffff"
+       stroke-width="30"
+       stroke-linecap="round"
+       stroke-linejoin="round"
+       paint-order="stroke fill" />
   </g>
 </svg>

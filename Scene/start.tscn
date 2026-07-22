@@ -1,7 +1,37 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://Start.cs" id="1_start"]
 [ext_resource type="Texture2D" path="res://resources/marketing.png" id="2_marketing"]
+
+[sub_resource type="Shader" id="Shader_background"]
+code = "shader_type canvas_item;
+
+void fragment() {
+	vec4 source = texture(TEXTURE, UV);
+	float vignette = smoothstep(0.94, 0.26, distance(UV, vec2(0.5)));
+	float pulse = 0.98 + sin(TIME * 0.45) * 0.02;
+	vec3 graded = source.rgb * vec3(0.9, 0.95, 1.08) * pulse;
+	COLOR = vec4(graded * mix(0.62, 1.0, vignette), source.a);
+}"
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_background"]
+shader = SubResource("Shader_background")
+
+[sub_resource type="Shader" id="Shader_atmosphere"]
+code = "shader_type canvas_item;
+
+void fragment() {
+	float edge = smoothstep(0.38, 1.0, abs(UV.x - 0.5) * 2.0);
+	float bottom = smoothstep(0.7, 1.0, UV.y);
+	float scan = sin(UV.y * 820.0 + TIME * 1.2) * 0.009;
+	float center = 1.0 - smoothstep(0.0, 0.34, distance(UV, vec2(0.5, 0.61)));
+	vec3 navy = vec3(0.006, 0.014, 0.055);
+	float alpha = 0.08 + edge * 0.22 + bottom * 0.76 + scan - center * 0.08;
+	COLOR = vec4(navy, clamp(alpha, 0.02, 0.9));
+}"
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_atmosphere"]
+shader = SubResource("Shader_atmosphere")
 
 [node name="Start" type="Control"]
 layout_mode = 3
@@ -13,6 +43,7 @@ grow_vertical = 2
 script = ExtResource("1_start")
 
 [node name="Background" type="TextureRect" parent="."]
+material = SubResource("ShaderMaterial_background")
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -24,7 +55,8 @@ texture = ExtResource("2_marketing")
 expand_mode = 1
 stretch_mode = 6
 
-[node name="Shade" type="ColorRect" parent="."]
+[node name="Atmosphere" type="ColorRect" parent="."]
+material = SubResource("ShaderMaterial_atmosphere")
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -32,82 +64,64 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-color = Color(0.015, 0.025, 0.08, 0.42)
+color = Color(1, 1, 1, 1)
 
-[node name="Content" type="VBoxContainer" parent="."]
+[node name="Menu" type="VBoxContainer" parent="."]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -230.0
-offset_top = -390.0
-offset_right = 230.0
-offset_bottom = 390.0
+offset_left = -225.0
+offset_top = -142.0
+offset_right = 225.0
+offset_bottom = 198.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 34
-alignment = 1
+theme_override_constants/separation = 14
 
-[node name="Title" type="Label" parent="Content"]
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.9, 0.25, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.8)
-theme_override_constants/shadow_offset_x = 4
-theme_override_constants/shadow_offset_y = 4
-theme_override_font_sizes/font_size = 76
-text = "PAAKURI"
-horizontal_alignment = 1
-
-[node name="Subtitle" type="Label" parent="Content"]
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 22
-text = "AI / HOST-AUTHORITATIVE P2P"
-horizontal_alignment = 1
-
-[node name="AiButton" type="Button" parent="Content"]
-custom_minimum_size = Vector2(0, 72)
-layout_mode = 2
-theme_override_font_sizes/font_size = 30
-text = "AI 대전"
-
-[node name="HostButton" type="Button" parent="Content"]
-custom_minimum_size = Vector2(0, 64)
-layout_mode = 2
-theme_override_font_sizes/font_size = 26
-text = "멀티 방 생성"
-
-[node name="RoomCode" type="LineEdit" parent="Content"]
-custom_minimum_size = Vector2(0, 58)
-layout_mode = 2
-theme_override_font_sizes/font_size = 22
-placeholder_text = "호스트 LAN 주소 (예: 192.168.x.x:24872)"
-
-[node name="JoinButton" type="Button" parent="Content"]
-custom_minimum_size = Vector2(0, 64)
-layout_mode = 2
-theme_override_font_sizes/font_size = 26
-text = "멀티 참가"
-
-[node name="ReadyButton" type="Button" parent="Content"]
-custom_minimum_size = Vector2(0, 58)
+[node name="LocalButton" type="Button" parent="Menu"]
+custom_minimum_size = Vector2(450, 72)
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-disabled = true
-text = "READY"
+text = "LOCAL   ·   AI 대전"
 
-[node name="Status" type="Label" parent="Content"]
-custom_minimum_size = Vector2(0, 54)
+[node name="MultiButton" type="Button" parent="Menu"]
+custom_minimum_size = Vector2(450, 72)
 layout_mode = 2
-theme_override_font_sizes/font_size = 18
-text = "AI 대전을 선택하거나 방을 생성하세요."
+theme_override_font_sizes/font_size = 24
+text = "MULTI   ·   온라인 대전"
+
+[node name="CustomButton" type="Button" parent="Menu"]
+custom_minimum_size = Vector2(450, 72)
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "CUSTOM   ·   캐릭터 설정"
+
+[node name="QuitButton" type="Button" parent="Menu"]
+custom_minimum_size = Vector2(450, 64)
+layout_mode = 2
+theme_override_font_sizes/font_size = 21
+text = "QUIT   ·   게임 종료"
+
+[node name="ModeHint" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -390.0
+offset_top = -58.0
+offset_right = 390.0
+offset_bottom = -24.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_colors/font_color = Color(0.68, 0.77, 0.9, 0.84)
+theme_override_colors/font_shadow_color = Color(0.002, 0.008, 0.03, 0.94)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 15
+text = "A / D 이동   ·   SPACE 점프   ·   LMB 사격   ·   RMB 패링"
 horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="QuitButton" type="Button" parent="Content"]
-custom_minimum_size = Vector2(0, 72)
-layout_mode = 2
-theme_override_font_sizes/font_size = 30
-text = "QUIT"

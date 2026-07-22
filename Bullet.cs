@@ -130,7 +130,8 @@ public partial class Bullet : RigidBody2D
             ScaleAmountMax = 5.0f,
             Color = new Color(1.0f, 0.55f, 0.15f, 0.9f)
         };
-        GetTree().CurrentScene.AddChild(impact);
+        var impactParent = GetParent() ?? GetTree().CurrentScene;
+        impactParent.AddChild(impact);
         impact.GlobalPosition = GlobalPosition + normal * 6.0f;
         impact.Emitting = true;
         GetTree().CreateTimer(impact.Lifetime).Timeout += impact.QueueFree;

@@ -119,6 +119,7 @@ public partial class NetworkSession : Node
     {
         if (!IsNetworkGame || !ConnectionActive || RemotePeerId == 0)
             return;
+        ShareLocalCustomization();
         LocalReady = !LocalReady;
         if (IsHost)
         {
@@ -146,6 +147,25 @@ public partial class NetworkSession : Node
             RpcId(RemotePeerId, MethodName.ReceiveSnapshot, payload);
     }
 
+    public void ShareLocalCustomization()
+    {
+        if (!IsNetworkGame || !ConnectionActive || RemotePeerId == 0)
+            return;
+        var look = CharacterCustomization.Instance.LocalLook;
+		if (IsHost)
+		{
+			RpcId(RemotePeerId, MethodName.ReceiveCustomization,
+				look.BodyColor.R, look.BodyColor.G, look.BodyColor.B,
+				look.EyeColor.R, look.EyeColor.G, look.EyeColor.B,
+				(int)look.EyeShape);
+			return;
+		}
+		RpcId(1, MethodName.SubmitCustomization,
+			look.BodyColor.R, look.BodyColor.G, look.BodyColor.B,
+			look.EyeColor.R, look.EyeColor.G, look.EyeColor.B,
+			(int)look.EyeShape);
+    }
+
     public void ReturnToLobby(string reason)
     {
         Disconnect();
@@ -164,9 +184,11 @@ public partial class NetworkSession : Node
         RemoteReady = false;
         RemotePeerId = 0;
         HostRoomCode = string.Empty;
+        if (GodotObject.IsInstanceValid(CharacterCustomization.Instance))
+            CharacterCustomization.Instance.ResetRemote();
     }
 
-    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 2)]
     private void SubmitReady(bool ready)
     {
         if (!IsHost || Multiplayer.GetRemoteSenderId() != RemotePeerId)
@@ -177,13 +199,50 @@ public partial class NetworkSession : Node
         TryStartNetworkGame();
     }
 
-    [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 2)]
     private void ReceiveHostReady(bool ready)
     {
         if (!IsClient)
             return;
         RemoteReady = ready;
         LobbyChanged?.Invoke();
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 2)]
+    private void SubmitCustomization(
+        float bodyR,
+        float bodyG,
+        float bodyB,
+		float eyeR,
+		float eyeG,
+		float eyeB,
+		int eyeShape)
+    {
+        if (!IsHost || Multiplayer.GetRemoteSenderId() != RemotePeerId)
+            return;
+		CharacterCustomization.Instance.SetRemote(CharacterCustomization.FromNetworkAppearance(
+			bodyR, bodyG, bodyB,
+			eyeR, eyeG, eyeB,
+			eyeShape));
+        ShareLocalCustomization();
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 2)]
+    private void ReceiveCustomization(
+        float bodyR,
+        float bodyG,
+        float bodyB,
+		float eyeR,
+		float eyeG,
+		float eyeB,
+		int eyeShape)
+    {
+        if (!IsClient)
+            return;
+		CharacterCustomization.Instance.SetRemote(CharacterCustomization.FromNetworkAppearance(
+			bodyR, bodyG, bodyB,
+			eyeR, eyeG, eyeB,
+			eyeShape));
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.UnreliableOrdered, TransferChannel = 0)]
@@ -222,6 +281,7 @@ public partial class NetworkSession : Node
         ConnectionActive = true;
         GD.Print($"PAAKURI peer connected: {peerId} ({Mode})");
         SetStatus(IsHost ? $"플레이어 {peerId} 참가 — 두 플레이어가 READY를 누르세요." : "호스트와 연결됨 — READY를 누르세요.");
+        ShareLocalCustomization();
         if (_autoReady && !LocalReady)
             ToggleReady();
     }
@@ -237,6 +297,7 @@ public partial class NetworkSession : Node
     {
         ConnectionActive = true;
         SetStatus("호스트와 연결됨 — READY를 누르세요.");
+        ShareLocalCustomization();
     }
 
     private void OnConnectionFailed() => ReturnToLobby("호스트 연결에 실패했습니다.");

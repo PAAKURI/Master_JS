@@ -8,6 +8,7 @@ public partial class Player : CharacterBody2D
 
 	private static readonly PackedScene BulletScene = GD.Load<PackedScene>("res://Scene/bullet.tscn");
 	private static readonly AudioStream ShootSound = GD.Load<AudioStream>("res://resources/shoot.mp3");
+	private static readonly AudioStream HitSound = GD.Load<AudioStream>("res://resources/playerHit.mp3");
 	private static readonly Vector2 ArenaSize = new(1920.0f, 1080.0f);
 
 	private const float Speed = 400.0f;
@@ -129,6 +130,7 @@ public partial class Player : CharacterBody2D
 	private TextureProgressBar _parryCooldownIndicator = null!;
 	private Polygon2D[] _ammoIndicators = null!;
 	private AudioStreamPlayer _shootAudio = null!;
+	private AudioStreamPlayer _hitAudio = null!;
 
 	public override void _Ready()
 	{
@@ -154,6 +156,8 @@ public partial class Player : CharacterBody2D
 		_parryCooldownIndicator = GetNode<TextureProgressBar>("ParryCooldown");
 		_shootAudio = new AudioStreamPlayer { Stream = ShootSound };
 		AddChild(_shootAudio);
+		_hitAudio = new AudioStreamPlayer { Stream = HitSound };
+		AddChild(_hitAudio);
 		_ammoIndicators = new[]
 		{
 			GetNode<Polygon2D>("AmmoDisplay/Bullet1"),
@@ -397,6 +401,7 @@ public partial class Player : CharacterBody2D
 			return false;
 
 		Health = Math.Max(Health - amount, 0);
+		_hitAudio.Play();
 		_healthBar.Value = Health;
 		_invulnerabilityTime = HitInvulnerability;
 		var knockbackDirection = bulletVelocity.LengthSquared() > 0.01f ? bulletVelocity.Normalized() : Vector2.Up;
@@ -512,7 +517,10 @@ public partial class Player : CharacterBody2D
 	private void ApplyAuthoritativeFields(Vector2 aim, int health, int ammo, float reloadTime, float parryCooldown, bool alive)
 	{
 		AimDirection = aim.IsFinite() && aim.LengthSquared() > 0.0001f ? aim.Normalized() : AimDirection;
-		Health = Mathf.Clamp(health, 0, MaxHealth);
+		var nextHealth = Mathf.Clamp(health, 0, MaxHealth);
+		if (nextHealth < Health)
+			_hitAudio.Play();
+		Health = nextHealth;
 		Ammo = Mathf.Clamp(ammo, 0, MagazineSize);
 		_reloadTime = float.IsFinite(reloadTime) ? Mathf.Max(reloadTime, 0.0f) : 0.0f;
 		_parryCooldown = float.IsFinite(parryCooldown) ? Mathf.Max(parryCooldown, 0.0f) : 0.0f;

@@ -3,6 +3,7 @@ using Godot;
 
 public partial class Bullet : RigidBody2D
 {
+    private static readonly AudioStream WallHitSound = GD.Load<AudioStream>("res://resources/wallHit.wav");
     private static int _nextNetworkId = 1;
     private const int MaxTrailPoints = 30;
     private const float LifetimeSeconds = 5.0f;
@@ -173,6 +174,10 @@ public partial class Bullet : RigidBody2D
 
     public static void SpawnImpactEffect(Node parent, Vector2 position, Vector2 normal)
     {
+        var audio = new AudioStreamPlayer { Stream = WallHitSound };
+        parent.AddChild(audio);
+        audio.Finished += audio.QueueFree;
+        audio.Play();
         var impact = new CpuParticles2D
         {
             Amount = 10,

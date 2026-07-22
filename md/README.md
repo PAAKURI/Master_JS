@@ -1,6 +1,6 @@
-# PAAKURI
+<img width="1834" height="858" alt="image" src="https://github.com/user-attachments/assets/bb43bfe6-76e9-48f0-a32d-f3d81705a1a0" />
 
-Godot 4.7.1 Mono 기반의 오프라인 전투 프로토타입입니다.
 
-실행 후 `게임 시작`을 누르면 플레이어 1 대 전투 봇의 3판 2선승 테스트가 시작됩니다.
-조작법과 구현/검증 내역은 `work.md`, 이후 개발 항목은 `task.md`를 참고하세요.
+# 세기의 명작, 파쿠리!
+
+지금 바로 플레이 하세요!

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dkx30sdwcg4m8"
-path="res://.godot/imported/player_right_leg.png-ab3ed17422a8d1823e264da7cd324f10.ctex"
+uid="uid://cx4yj3uqn4y5g"
+path="res://.godot/imported/parry_cooldown.svg-13e3f1694f44ee919d1a40b4efbd65c0.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://resources/player_right_leg.png"
-dest_files=["res://.godot/imported/player_right_leg.png-ab3ed17422a8d1823e264da7cd324f10.ctex"]
+source_file="res://resources/parry_cooldown.svg"
+dest_files=["res://.godot/imported/parry_cooldown.svg-13e3f1694f44ee919d1a40b4efbd65c0.ctex"]
 
 [params]
 
@@ -38,3 +38,6 @@ process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
 detect_3d/compress_to=1
+svg/scale=1.0
+editor/scale_with_editor_scale=false
+editor/convert_colors_with_editor_theme=false

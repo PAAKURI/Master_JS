@@ -50,4 +50,12 @@ public partial class EyeBall : RigidBody2D
 		GlobalPosition = _target.ToGlobal(_anchor);
 		LinearVelocity = Vector2.Zero;
 	}
+
+	public void ConfigurePhysics(float springStrength, float damping, float chaos)
+	{
+		SpringStrength = Mathf.Clamp(springStrength, 18.0f, 120.0f);
+		Damping = Mathf.Clamp(damping, 1.5f, 20.0f);
+		Chaos = Mathf.Clamp(chaos, 0.0f, 180.0f);
+		SnapToAnchor();
+	}
 }

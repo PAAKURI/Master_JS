@@ -17,6 +17,7 @@ config/icon="res://resources/marketing.png"
 
 [autoload]
 
+CharacterCustomization="*res://CharacterCustomization.cs"
 NetworkSession="*res://NetworkSession.cs"
 
 [display]

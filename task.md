@@ -1,6 +1,6 @@
 # PAAKURI 다음 개발 작업
 
-마지막 갱신: 2026-07-21
+마지막 갱신: 2026-07-22
 대상 환경: Godot 4.7.1 Mono, .NET 8, Windows
 현재 단계: AI 대전 유지 + ENet 호스트 권한형 P2P 프로토타입 구현 완료, 실기기 검증과 전용 서버 통합 필요
 
@@ -224,3 +224,73 @@
 5. 서버: `dotnet build Master_GJ.csproj --nologo`
 6. 서버 스모크: `--headless --path . --quit-after 120 -- --port=24873`
 7. 양쪽 저장소: `git diff --check`
+
+## 2026-07-22 시작 화면 UI 및 캐릭터 커스터마이징
+
+### 완료된 개선사항
+
+- [x] `marketing.png`가 가려지지 않도록 중앙 세로 메뉴를 상단 브랜드 영역 + 하단 글래스 패널 구조로 재배치했다.
+- [x] 게임 내 네온 계열과 어울리는 네이비/시안/옐로 팔레트, 배경 비네트·스캔라인 셰이더, 패널 그림자, 버튼 호버/등장 트윈을 추가했다.
+- [x] `SystemFont` 폴백 체인을 추가해 영문 제목은 굵고 좁은 디스플레이 폰트, 한국어 본문은 가독성 높은 UI 폰트를 사용하도록 했다.
+- [x] 시작 UI에 `CHARACTER CUSTOM` 버튼과 전체 화면 커스터마이징 모달을 추가했다.
+- [x] 캐릭터 몸 색, 눈 색, 눈 모양 4종(원형/타원/다이아몬드/사각형), 눈 물리 성향 4종(안정/말랑/탄성/혼돈)을 선택할 수 있다.
+- [x] 커스터마이징 모달에서 선택 결과와 눈 스프링 움직임을 실시간으로 보여 주는 미리보기를 구현했다.
+- [x] 선택값을 `user://character_customization.cfg`에 저장하고 다음 실행에서도 복원하도록 했다.
+- [x] 실제 `Player`의 몸/탄약/패링 UI 색, 눈 폴리곤/색, `EyeBall` 스프링·감쇠·불규칙 힘에 선택값을 적용했다.
+- [x] AI전은 로컬 설정 + 구분 가능한 기본 상대 외형을 사용하고, 네트워크전은 양쪽 커스터마이징을 reliable channel 2 RPC로 교환한다.
+- [x] 커스터마이징 RPC와 READY RPC를 같은 ordered reliable 채널에 두어 게임 씬 전환 전에 외형 설정이 도착하도록 했다.
+
+### 확인된 문제 및 후속 작업
+
+- [ ] Windows 세션이 잠금 화면 상태여서 실제 창 스크린샷 기반의 최종 육안 QA를 하지 못했다. 잠금 해제 후 16:9/16:10/창 모드에서 배경 크롭, 글자 잘림, 모달 여백을 확인한다.
+- [ ] Godot 4.7.1의 headless `--write-movie .png`가 dummy texture renderer에서 signal 11로 충돌했다. 일반 렌더러 캡처로 대체하거나 엔진 이슈 여부를 확인한다.
+- [ ] 시스템 폰트 폴백을 사용하므로 Windows 외 플랫폼에서는 자간과 줄바꿈이 조금 달라질 수 있다. 배포 플랫폼이 확정되면 OFL 라이선스 폰트를 프로젝트에 포함한다.
+- [ ] 두 사용자가 비슷한 몸 색을 선택하면 전투 중 구분이 약해질 수 있다. 추후 P1/P2 외곽선 또는 이름표를 커스텀 색과 분리해 추가한다.
+- [ ] 커스터마이징은 로비에서 교환하며 경기 도중 변경 UI는 제공하지 않는다. 재대결 중 변경 기능이 필요하면 결과 화면에서 로비 설정 재동기화를 추가한다.
+- [ ] 작업 시작 전부터 `Player.cs`와 `resources/parry_cooldown.svg.import`가 Git unmerged 상태였다. 현재 작업 트리의 `Player.cs`는 빌드되지만, 커밋 전 기존 충돌 의도를 확인하고 index 충돌을 정리해야 한다.
+
+### 검증 명령
+
+1. `dotnet build Master_JS.csproj --nologo`
+2. Godot import: `--headless --path . --editor --quit`
+3. 커스터마이저: `--headless --path . --scene res://Scene/start.tscn --fixed-fps 60 --quit-after 180 -- --paakuri-customization-smoke`
+4. AI: `--headless --path . --scene res://Scene/main.tscn --fixed-fps 60 --quit-after 240`
+5. 네트워크: 호스트/클라이언트를 `--paakuri-host=<port> --paakuri-auto-ready`, `--paakuri-join=127.0.0.1:<port> --paakuri-auto-ready`로 실행
+6. `git diff --check`
+
+## 2026-07-22 시작 UX 씬 분리 및 반동 커스터마이징
+
+### 완료된 개선사항
+
+- [x] `start.tscn`의 로비/상태/커스텀 패널을 모두 제거하고 화면 중앙에 `LOCAL → MULTI → CUSTOM → QUIT` 4개 버튼만 세로로 배치했다.
+- [x] 기존 네이비/시안 버튼 형태와 hover/pressed 효과는 유지하면서 모든 버튼 글자를 흰색으로 통일하고, 배경보다 어두운 글자 그림자와 버튼 그림자를 적용했다.
+- [x] 마케팅 배경의 비네트·미세 펄스·스캔라인은 유지하고 하단 원본 문구가 조작 안내와 겹치지 않도록 하단 암부를 강화했다.
+- [x] `MULTI`를 `Scene/multiplayer.tscn` 독립 씬으로 분리했다. 마케팅 이미지의 바깥 네이비와 같은 계열의 단색 배경 위에 방 생성, 복사 가능한 로컬 주소, 호스트 주소 입력, 방 참가, 준비를 중앙 세로 동선으로 정리했다.
+- [x] `CUSTOM`을 `Scene/customization.tscn` 독립 씬으로 분리하고 기존 모달보다 큰 화면 영역을 사용하도록 확장했다.
+- [x] 몸 색, 눈 모양, 눈 색 기능은 유지하고 기존 `눈 물리 성향` 드롭다운을 1~5단계 이산 `발사 반동` 슬라이더로 교체했다.
+- [x] 반동 단계는 105/125/145/165/185로 매핑되며 `CharacterLook.RecoilLevel`로 저장·복원된다.
+- [x] 커스텀 미리보기는 별도 그림이 아니라 실제 `Scene/player.tscn` 인스턴스와 실제 `Player`, `Bullet` 물리를 사용하는 테스트장으로 교체했다.
+- [x] 테스트장 위에 마우스가 있을 때 마우스 조준, 좌클릭 발사, 우클릭 패링, A/D 이동, Space 점프를 실제 게임 로직으로 시험할 수 있고 `테스트 리셋`으로 캐릭터와 총알을 초기화할 수 있다.
+- [x] `Player.ApplyCustomization()`이 선택한 반동을 실제 `_recoilStrength`에 반영하며 AI전과 호스트 권한형 멀티플레이 양쪽에 적용된다.
+- [x] 네트워크 커스터마이징 RPC가 이전 눈 물리 enum 대신 반동 단계를 reliable channel 2로 교환하도록 변경됐다.
+- [x] 시작/멀티/커스텀 세 씬에서 공유하는 `resources/ui_menu_theme.tres`를 추가해 폰트, 색, 버튼, 입력창 스타일을 한곳에서 관리한다.
+
+### 검증 결과
+
+- [x] `dotnet build Master_JS.csproj --nologo`: 경고 0, 오류 0.
+- [x] Godot 4.7.1 Mono headless editor import 성공.
+- [x] 시작, 멀티, 커스텀, AI 메인 씬 headless smoke 성공.
+- [x] 일반 렌더러의 Godot embedded game에서 시작/멀티/커스텀 화면 정렬과 한글 폰트 대비를 육안 확인했다.
+- [x] 커스텀 테스트장에서 좌클릭 발사 반동, 3→5단계 슬라이더 변경, 5단계 발사 반동을 직접 확인했다.
+- [x] 로컬 ENet 호스트/클라이언트가 연결·자동 READY 후 각각 `GameManager ready: Host/Client`까지 진입했고 RPC 오류가 없었다.
+- [x] `git diff --check` 통과.
+
+### 확인된 문제 및 후속 작업
+
+- [ ] 반동은 이제 외형이 아니라 실제 이동 물리에 영향을 주는 사용자별 게임플레이 값이다. 초기 기획의 “같은 무기 성능” 원칙과 충돌하므로 1~5단계 차이를 경쟁 규칙으로 허용할지, 시각 전용 반동으로 제한할지 기획 확정이 필요하다.
+- [ ] 반동 단계가 호스트 판정에 적용되지만 네트워크 스냅샷에는 설정 버전이 포함되지 않는다. READY 직전 커스텀 RPC 순서는 reliable channel 2로 보장되나, 프로토콜 버전 필드와 설정 hash를 후속 추가하는 편이 안전하다.
+- [ ] 실제 `Player`에는 조준 방향으로 회전하는 총기 스프라이트가 아직 없어 테스트장에서 마우스 조준 방향은 총알 궤적으로만 확인된다. 총기 비주얼이 추가되면 테스트장에서도 자동으로 같은 노드를 재사용해야 한다.
+- [ ] 커스텀 테스트장은 실제 플레이어 씬을 그대로 사용하지만 미리보기 전용 벽/바닥과 고정 카메라를 사용한다. 맵별 경사면·벽 점프·낙사는 인게임에서 별도로 검증해야 한다.
+- [ ] `CustomizationPreview.cs`와 `.uid`는 새 실제 플레이어 테스트장에서는 더 이상 참조되지 않는다. 현재 작업 트리 충돌 정리 후 안전하게 삭제할 수 있다.
+- [ ] 연결 실패/호스트 종료 시 `NetworkSession.ReturnToLobby()`는 멀티 씬이 아니라 시작 씬으로 돌아간다. 재시도 중심 UX를 원하면 실패 시 `multiplayer.tscn`으로 복귀하고 상태 문구를 유지하도록 분기한다.
+- [ ] 작업 시작 전부터 존재한 `Player.cs`, `resources/parry_cooldown.svg.import`의 Git unmerged 상태는 그대로다. 현재 worktree는 빌드·실행되지만 커밋 전에 기존 충돌 의도를 확인해야 한다.

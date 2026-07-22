@@ -1,0 +1,252 @@
+[gd_scene load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://CustomizationMenu.cs" id="1_script"]
+[ext_resource type="Theme" path="res://resources/ui_menu_theme.tres" id="2_theme"]
+[ext_resource type="Script" path="res://CustomizationPreview.cs" id="3_preview"]
+[ext_resource type="PackedScene" path="res://Scene/player.tscn" id="4_player"]
+
+[sub_resource type="Shader" id="Shader_background"]
+code = "shader_type canvas_item;
+
+void fragment() {
+	vec3 navy = vec3(0.006, 0.014, 0.055);
+	float left_glow = 1.0 - smoothstep(0.0, 0.8, distance(UV, vec2(0.24, 0.52)));
+	float right_glow = 1.0 - smoothstep(0.0, 0.66, distance(UV, vec2(0.82, 0.38)));
+	float lines = sin((UV.x + UV.y) * 460.0 + TIME * 0.8) * 0.004;
+	vec3 color = navy + vec3(0.01, 0.07, 0.14) * left_glow + vec3(0.09, 0.03, 0.11) * right_glow + lines;
+	COLOR = vec4(color, 1.0);
+}"
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_background"]
+shader = SubResource("Shader_background")
+
+[sub_resource type="StyleBoxFlat" id="Style_card"]
+content_margin_left = 28.0
+content_margin_top = 26.0
+content_margin_right = 28.0
+content_margin_bottom = 26.0
+bg_color = Color(0.02, 0.046, 0.108, 0.96)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.31, 0.75, 0.93, 0.4)
+corner_radius_top_left = 16
+corner_radius_top_right = 16
+corner_radius_bottom_right = 16
+corner_radius_bottom_left = 16
+
+[sub_resource type="Theme" id="Theme_start_button"]
+
+[node name="CustomizationMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_script")
+
+[node name="Background" type="ColorRect" parent="."]
+material = SubResource("ShaderMaterial_background")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.006, 0.014, 0.055, 1)
+
+[node name="BackButton" type="Button" parent="."]
+z_index = 2
+custom_minimum_size = Vector2(132, 52)
+layout_mode = 0
+offset_left = 42.0
+offset_top = 30.0
+offset_right = 174.0
+offset_bottom = 82.0
+theme_override_font_sizes/font_size = 17
+theme = SubResource("Theme_start_button")
+text = "BACK   ·   돌아가기"
+
+[node name="CustomizationPanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_left = 0.055
+anchor_top = 0.105
+anchor_right = 0.945
+anchor_bottom = 0.945
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Content" type="VBoxContainer" parent="CustomizationPanel"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Body" type="HBoxContainer" parent="CustomizationPanel/Content"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 24
+
+[node name="PreviewFrame" type="PanelContainer" parent="CustomizationPanel/Content/Body"]
+custom_minimum_size = Vector2(820, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.7
+theme_override_styles/panel = SubResource("Style_card")
+
+[node name="Preview" type="SubViewportContainer" parent="CustomizationPanel/Content/Body/PreviewFrame"]
+custom_minimum_size = Vector2(760, 620)
+layout_mode = 2
+mouse_filter = 2
+stretch = true
+stretch_shrink = 4
+script = ExtResource("3_preview")
+
+[node name="PreviewViewport" type="SubViewport" parent="CustomizationPanel/Content/Body/PreviewFrame/Preview"]
+transparent_bg = true
+handle_input_locally = false
+size = Vector2i(320, 240)
+render_target_update_mode = 4
+
+[node name="Player" parent="CustomizationPanel/Content/Body/PreviewFrame/Preview/PreviewViewport" instance=ExtResource("4_player")]
+position = Vector2(160, 120)
+PreviewMode = true
+
+[node name="PreviewHint" type="Label" parent="CustomizationPanel/Content/Body/PreviewFrame"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.48, 0.69, 0.84, 0.88)
+theme_override_font_sizes/font_size = 14
+text = "실제 게임 캐릭터  ·  좌우 움직임으로 눈 속도를 확인하세요"
+horizontal_alignment = 1
+vertical_alignment = 2
+
+[node name="SettingsFrame" type="PanelContainer" parent="CustomizationPanel/Content/Body"]
+custom_minimum_size = Vector2(500, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("Style_card")
+
+[node name="Settings" type="VBoxContainer" parent="CustomizationPanel/Content/Body/SettingsFrame"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="SettingsTitle" type="Label" parent="CustomizationPanel/Content/Body/SettingsFrame/Settings"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.85, 0.28, 1)
+theme_override_font_sizes/font_size = 26
+text = "캐릭터 설정"
+
+[node name="BodyColorLabel" type="Label" parent="CustomizationPanel/Content/Body/SettingsFrame/Settings"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.8, 0.91, 1)
+theme_override_font_sizes/font_size = 15
+text = "몸 색상"
+
+[node name="BodyColor" type="ColorPickerButton" parent="CustomizationPanel/Content/Body/SettingsFrame/Settings"]
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+edit_alpha = false
+color = Color(0.1647, 0.6627, 1, 1)
+
+[node name="EyeShapeLabel" type="Label" parent="CustomizationPanel/Content/Body/SettingsFrame/Settings"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.8, 0.91, 1)
+theme_override_font_sizes/font_size = 15
+text = "눈 모양"
+
+[node name="EyeShape" type="OptionButton" parent="CustomizationPanel/Content/Body/SettingsFrame/Settings"]
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+
+[node name="EyeColorLabel" type="Label" parent="CustomizationPanel/Content/Body/SettingsFrame/Settings"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.8, 0.91, 1)
+theme_override_font_sizes/font_size = 15
+text = "눈 색상"
+
+[node name="EyeColor" type="ColorPickerButton" parent="CustomizationPanel/Content/Body/SettingsFrame/Settings"]
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+edit_alpha = false
+color = Color(0.0667, 0.0824, 0.1294, 1)
+
+[node name="EyeFollowHeader" type="HBoxContainer" parent="CustomizationPanel/Content/Body/SettingsFrame/Settings"]
+layout_mode = 2
+
+[node name="EyeFollowLabel" type="Label" parent="CustomizationPanel/Content/Body/SettingsFrame/Settings/EyeFollowHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.65, 0.8, 0.91, 1)
+theme_override_font_sizes/font_size = 15
+text = "눈알 따라오는 속도"
+
+[node name="EyeFollowValue" type="Label" parent="CustomizationPanel/Content/Body/SettingsFrame/Settings/EyeFollowHeader"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.83, 0.25, 1)
+theme_override_font_sizes/font_size = 15
+text = "3단계  ·  보통"
+horizontal_alignment = 2
+
+[node name="EyeFollowSlider" type="HSlider" parent="CustomizationPanel/Content/Body/SettingsFrame/Settings"]
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+min_value = 1.0
+max_value = 5.0
+step = 1.0
+value = 3.0
+tick_count = 5
+ticks_on_borders = true
+
+[node name="EyeFollowScale" type="HBoxContainer" parent="CustomizationPanel/Content/Body/SettingsFrame/Settings"]
+layout_mode = 2
+
+[node name="Slow" type="Label" parent="CustomizationPanel/Content/Body/SettingsFrame/Settings/EyeFollowScale"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.45, 0.64, 0.78, 0.9)
+theme_override_font_sizes/font_size = 13
+text = "느리게"
+
+[node name="Fast" type="Label" parent="CustomizationPanel/Content/Body/SettingsFrame/Settings/EyeFollowScale"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.45, 0.64, 0.78, 0.9)
+theme_override_font_sizes/font_size = 13
+text = "빠르게"
+horizontal_alignment = 2
+
+[node name="Spacer" type="Control" parent="CustomizationPanel/Content/Body/SettingsFrame/Settings"]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+
+[node name="Actions" type="HBoxContainer" parent="CustomizationPanel/Content"]
+layout_mode = 2
+alignment = 2
+theme_override_constants/separation = 12
+
+[node name="DefaultsButton" type="Button" parent="CustomizationPanel/Content/Actions"]
+custom_minimum_size = Vector2(210, 64)
+layout_mode = 2
+theme = SubResource("Theme_start_button")
+theme_override_font_sizes/font_size = 20
+text = "DEFAULT   ·   기본값"
+
+[node name="CancelButton" type="Button" parent="CustomizationPanel/Content/Actions"]
+custom_minimum_size = Vector2(190, 64)
+layout_mode = 2
+theme = SubResource("Theme_start_button")
+theme_override_font_sizes/font_size = 20
+text = "CANCEL   ·   취소"
+
+[node name="SaveButton" type="Button" parent="CustomizationPanel/Content/Actions"]
+custom_minimum_size = Vector2(300, 64)
+layout_mode = 2
+theme = SubResource("Theme_start_button")
+theme_override_font_sizes/font_size = 21
+text = "SAVE   ·   저장하고 적용"

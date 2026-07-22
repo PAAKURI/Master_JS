@@ -48,6 +48,7 @@ public partial class Player : CharacterBody2D
 
 	[Export] public int PlayerId { get; set; } = 1;
 	[Export] public bool IsBot { get; set; }
+	[Export] public bool PreviewMode { get; set; }
 	[Export] public Color PlayerColor { get; set; } = new(0.2f, 0.65f, 1.0f);
 	[Export(PropertyHint.Range, "1.0,3.0,0.1")] public float SpriteGlowIntensity { get; set; } = 1.8f;
 
@@ -120,6 +121,10 @@ public partial class Player : CharacterBody2D
 	private Sprite2D _mouth = null!;
 	private Sprite2D _leftLeg = null!;
 	private Sprite2D _rightLeg = null!;
+	private EyeBall _leftEye = null!;
+	private EyeBall _rightEye = null!;
+	private Polygon2D _leftEyeVisual = null!;
+	private Polygon2D _rightEyeVisual = null!;
 	private Vector2 _leftLegRestPosition;
 	private Vector2 _rightLegRestPosition;
 	private float _leftLegAngularVelocity;
@@ -132,8 +137,11 @@ public partial class Player : CharacterBody2D
 
 	public override void _Ready()
 	{
-		AddToGroup("players");
-		CollisionMask |= CollisionLayer;
+		if (!PreviewMode)
+		{
+			AddToGroup("players");
+			CollisionMask |= CollisionLayer;
+		}
 		_bodyCollision = GetNode<CollisionShape2D>("CollisionShape2D");
 		_parryArea = GetNode<Area2D>("ParryArea");
 		_parryCollision = GetNode<CollisionShape2D>("ParryArea/CollisionShape2D");
@@ -143,6 +151,10 @@ public partial class Player : CharacterBody2D
 		_mouth = GetNode<Sprite2D>("BodyVisual/Tuck");
 		_leftLeg = GetNode<Sprite2D>("BodyVisual/LeftLeg");
 		_rightLeg = GetNode<Sprite2D>("BodyVisual/RightLeg");
+		_leftEye = GetNode<EyeBall>("LeftEye");
+		_rightEye = GetNode<EyeBall>("RightEye");
+		_leftEyeVisual = GetNode<Polygon2D>("LeftEye/Visual");
+		_rightEyeVisual = GetNode<Polygon2D>("RightEye/Visual");
 		AnchorLegAtTop(_leftLeg);
 		AnchorLegAtTop(_rightLeg);
 		_leftLegRestPosition = _leftLeg.Position;
@@ -172,6 +184,48 @@ public partial class Player : CharacterBody2D
 		UpdateAmmoDisplay();
 		_parryArea.BodyEntered += OnParryBodyEntered;
 		_botShootDelay = (float)GD.RandRange(0.5, 1.2);
+		if (PreviewMode)
+		{
+			InputEnabled = false;
+			CombatEnabled = false;
+			CollisionLayer = 0;
+			CollisionMask = 0;
+			_bodyCollision.SetDeferred(CollisionShape2D.PropertyName.Disabled, true);
+			_parryArea.Monitoring = false;
+			_parryCollision.SetDeferred(CollisionShape2D.PropertyName.Disabled, true);
+			_parryVisual.Visible = false;
+			_healthBar.Visible = false;
+			_reloadBar.Visible = false;
+			GetNode<Node2D>("AmmoDisplay").Visible = false;
+			_parryCooldownIndicator.Visible = false;
+			SetProcess(false);
+			SetPhysicsProcess(false);
+		}
+	}
+
+	public void ApplyCustomization(CharacterLook look)
+	{
+		look = look.Sanitized();
+		PlayerColor = look.BodyColor;
+		_spriteGlowColor = new Color(
+			look.BodyColor.R * SpriteGlowIntensity,
+			look.BodyColor.G * SpriteGlowIntensity,
+			look.BodyColor.B * SpriteGlowIntensity,
+			look.BodyColor.A);
+		_bodyVisual.Modulate = _spriteGlowColor;
+		GetNode<Node2D>("AmmoDisplay").Modulate = look.BodyColor;
+		_parryVisual.Color = new Color(look.BodyColor.R, look.BodyColor.G, look.BodyColor.B, 0.34f);
+		_healthBar.AddThemeStyleboxOverride("fill", new StyleBoxFlat { BgColor = look.BodyColor });
+		_reloadBar.AddThemeStyleboxOverride("fill", new StyleBoxFlat { BgColor = look.BodyColor });
+		_parryCooldownIndicator.TintProgress = look.BodyColor;
+
+		var eyePolygon = CharacterCustomization.BuildEyePolygon(look.EyeShape);
+		_leftEyeVisual.Polygon = eyePolygon;
+		_rightEyeVisual.Polygon = (Vector2[])eyePolygon.Clone();
+		_leftEyeVisual.Color = look.EyeColor;
+		_rightEyeVisual.Color = look.EyeColor;
+		_leftEye.ConfigurePhysics(look.EyeSpring, look.EyeDamping, look.EyeChaos);
+		_rightEye.ConfigurePhysics(look.EyeSpring, look.EyeDamping, look.EyeChaos);
 	}
 
 	public override void _Process(double _)
@@ -380,6 +434,14 @@ public partial class Player : CharacterBody2D
 			if (child is EyeBall eye)
 				eye.CallDeferred(EyeBall.MethodName.SnapToAnchor);
 		SetPhysicsProcess(true);
+	}
+
+	public void ResetPreview(Vector2 spawnPosition)
+	{
+		ResetForRound(spawnPosition);
+		InputEnabled = false;
+		CombatEnabled = false;
+		SetPhysicsProcess(false);
 	}
 
 	public void Kill()
@@ -713,7 +775,8 @@ public partial class Player : CharacterBody2D
 		}
 
 		var bullet = BulletScene.Instantiate<Bullet>();
-		GetTree().CurrentScene.AddChild(bullet);
+		var bulletParent = PreviewMode ? GetParent() : GetTree().CurrentScene;
+		bulletParent.AddChild(bullet);
 		bullet.GlobalPosition = _mouth.GlobalPosition;
 		bullet.SetOwnerPlayer(this);
 		bullet.LinearVelocity = AimDirection * BulletSpeed;

@@ -44,6 +44,7 @@ public partial class NetworkSession : Node
     private readonly Dictionary<long, bool> _peerReady = new();
     private readonly Dictionary<long, uint> _lastInputSequence = new();
     private readonly Dictionary<long, uint> _lastClientTick = new();
+    private readonly Dictionary<long, CharacterLook> _peerLooks = new();
     private readonly List<PlayerCommand> _pendingInputs = new();
     private LobbyPhase _phase;
     private bool _autoReady;
@@ -180,6 +181,7 @@ public partial class NetworkSession : Node
     {
         if (!IsNetworkGame || !ConnectionActive || IsDedicatedServer || (IsClient && RemotePeerId == 0))
             return;
+        ShareLocalCustomization();
         LocalReady = !LocalReady;
         if (IsHost)
         {
@@ -222,6 +224,29 @@ public partial class NetworkSession : Node
             RpcId(peerId, MethodName.ReceiveSnapshot, payload);
     }
 
+    public void ShareLocalCustomization()
+    {
+        if (!IsNetworkGame || !ConnectionActive || IsDedicatedServer ||
+            !GodotObject.IsInstanceValid(CharacterCustomization.Instance))
+            return;
+
+        var look = CharacterCustomization.Instance.LocalLook.Sanitized();
+        if (IsHost)
+        {
+            foreach (var peerId in _peerSlots.Keys)
+                SendCustomization(peerId, 1, look);
+            return;
+        }
+
+        if (IsClient)
+        {
+            RpcId(1, MethodName.SubmitCustomization,
+                look.BodyColor.R, look.BodyColor.G, look.BodyColor.B,
+                look.EyeColor.R, look.EyeColor.G, look.EyeColor.B,
+                (int)look.EyeShape, look.EyeFollowLevel);
+        }
+    }
+
     public void BeginRematchLobby()
     {
         if (!IsDedicatedServer || _phase == LobbyPhase.Rematch)
@@ -260,9 +285,12 @@ public partial class NetworkSession : Node
         _peerReady.Clear();
         _lastInputSequence.Clear();
         _lastClientTick.Clear();
+        _peerLooks.Clear();
         _pendingInputs.Clear();
         _nextInputSequence = 0;
         _clientTick = 0;
+        if (GodotObject.IsInstanceValid(CharacterCustomization.Instance))
+            CharacterCustomization.Instance.ResetRemote();
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 2)]
@@ -277,6 +305,83 @@ public partial class NetworkSession : Node
         RemoteReady = ready;
         BroadcastLobbyState();
         TryStartOrRematch();
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 2)]
+    private void SubmitCustomization(
+        float bodyR,
+        float bodyG,
+        float bodyB,
+        float eyeR,
+        float eyeG,
+        float eyeB,
+        int eyeShape,
+        int eyeFollowLevel)
+    {
+        if (!IsAuthority)
+            return;
+
+        var peerId = Multiplayer.GetRemoteSenderId();
+        if (!_peerSlots.TryGetValue(peerId, out var playerSlot))
+            return;
+
+        var look = CharacterCustomization.FromNetwork(
+            bodyR, bodyG, bodyB,
+            eyeR, eyeG, eyeB,
+            eyeShape, eyeFollowLevel);
+        _peerLooks[peerId] = look;
+
+        if (IsHost && GodotObject.IsInstanceValid(CharacterCustomization.Instance))
+            CharacterCustomization.Instance.SetRemote(look);
+
+        foreach (var targetPeerId in _peerSlots.Keys)
+        {
+            if (targetPeerId != peerId)
+                SendCustomization(targetPeerId, playerSlot, look);
+        }
+
+        if (IsHost && GodotObject.IsInstanceValid(CharacterCustomization.Instance))
+            SendCustomization(peerId, 1, CharacterCustomization.Instance.LocalLook);
+        else if (IsDedicatedServer)
+        {
+            foreach (var pair in _peerLooks)
+            {
+                if (pair.Key != peerId && _peerSlots.TryGetValue(pair.Key, out var remoteSlot))
+                    SendCustomization(peerId, remoteSlot, pair.Value);
+            }
+        }
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 2)]
+    private void ReceiveCustomization(
+        int playerSlot,
+        float bodyR,
+        float bodyG,
+        float bodyB,
+        float eyeR,
+        float eyeG,
+        float eyeB,
+        int eyeShape,
+        int eyeFollowLevel)
+    {
+        if (!IsClient || playerSlot == LocalPlayerSlot ||
+            !GodotObject.IsInstanceValid(CharacterCustomization.Instance))
+            return;
+
+        CharacterCustomization.Instance.SetRemote(CharacterCustomization.FromNetwork(
+            bodyR, bodyG, bodyB,
+            eyeR, eyeG, eyeB,
+            eyeShape, eyeFollowLevel));
+    }
+
+    private void SendCustomization(long peerId, int playerSlot, CharacterLook look)
+    {
+        look = look.Sanitized();
+        RpcId(peerId, MethodName.ReceiveCustomization,
+            playerSlot,
+            look.BodyColor.R, look.BodyColor.G, look.BodyColor.B,
+            look.EyeColor.R, look.EyeColor.G, look.EyeColor.B,
+            (int)look.EyeShape, look.EyeFollowLevel);
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.UnreliableOrdered, TransferChannel = 0)]
@@ -328,6 +433,7 @@ public partial class NetworkSession : Node
         Mode = dedicated ? SessionMode.DedicatedClient : SessionMode.Client;
         ConnectionActive = true;
         SetStatus(dedicated ? $"Dedicated server 연결 완료 — PLAYER {LocalPlayerSlot}" : "호스트 연결 완료 — READY를 누르세요.");
+        ShareLocalCustomization();
         if (_autoReady && !LocalReady)
             ToggleReady();
     }
@@ -387,6 +493,8 @@ public partial class NetworkSession : Node
         LocalReady = false;
         RemoteReady = false;
         Status = reason;
+        if (GodotObject.IsInstanceValid(CharacterCustomization.Instance))
+            CharacterCustomization.Instance.ResetRemote();
         GetTree().ChangeSceneToFile("res://Scene/start.tscn");
         LobbyChanged?.Invoke();
     }
@@ -466,6 +574,16 @@ public partial class NetworkSession : Node
         ConnectionActive = true;
         GD.Print($"PAAKURI peer connected: {peerId}, slot {slot} ({Mode})");
         RpcId(peerId, MethodName.ReceiveAssignedSlot, slot, IsDedicatedServer, NetworkProtocol.ProtocolVersion, NetworkProtocol.MapCatalogVersion);
+        if (IsHost && GodotObject.IsInstanceValid(CharacterCustomization.Instance))
+            SendCustomization(peerId, 1, CharacterCustomization.Instance.LocalLook);
+        else if (IsDedicatedServer)
+        {
+            foreach (var pair in _peerLooks)
+            {
+                if (_peerSlots.TryGetValue(pair.Key, out var remoteSlot))
+                    SendCustomization(peerId, remoteSlot, pair.Value);
+            }
+        }
         BroadcastLobbyState();
         if (_autoReady && IsHost && !LocalReady)
             ToggleReady();
@@ -478,6 +596,7 @@ public partial class NetworkSession : Node
         _peerReady.Remove(peerId);
         _lastInputSequence.Remove(peerId);
         _lastClientTick.Remove(peerId);
+        _peerLooks.Remove(peerId);
         if (IsHost)
         {
             ReturnToLobby("참가자가 연결을 종료했습니다.");

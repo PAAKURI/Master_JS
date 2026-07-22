@@ -4,7 +4,7 @@
 
 지금 바로 플레이 하세요!
 
-** 플레이 화면 **
+## 플레이 화면
 <img width="1917" height="1031" alt="스크린샷 2026-07-22 171649" src="https://github.com/user-attachments/assets/3acff125-08b6-40b8-b697-3245a9dda87e" />
 
 <img width="1917" height="1043" alt="스크린샷 2026-07-22 171656" src="https://github.com/user-attachments/assets/874311ad-db0e-4a1c-a497-3d7f8e9eee01" />

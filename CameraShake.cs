@@ -5,7 +5,22 @@ public partial class CameraShake : Camera2D
     private float _shakeTime;
     private float _shakeStrength;
 
+    public uint EventSequence { get; private set; }
+    public float CurrentStrength => _shakeStrength;
+    public float RemainingTime => _shakeTime;
+
     public void shake(float strength, float duration)
+    {
+        EventSequence++;
+        ApplyShake(strength, duration);
+    }
+
+    public void ApplyNetworkShake(float strength, float duration)
+    {
+        ApplyShake(strength, duration);
+    }
+
+    private void ApplyShake(float strength, float duration)
     {
         _shakeStrength = Mathf.Max(_shakeStrength, strength);
         _shakeTime = Mathf.Max(_shakeTime, duration);

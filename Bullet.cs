@@ -1,3 +1,4 @@
+using System;
 using Godot;
 
 public partial class Bullet : RigidBody2D
@@ -17,11 +18,16 @@ public partial class Bullet : RigidBody2D
     private float _age;
     private bool _collisionQueued;
     private int _ownerVersion;
+    private Vector2 _replicaTargetPosition;
+    private double _replicaUpdatedAt;
+    private bool _headless;
 
     public override void _Ready()
     {
         AddToGroup("bullets");
         _trail = GetNode<Line2D>("Trail");
+        _headless = DisplayServer.GetName() == "headless";
+        _trail.Visible = !_headless;
         if (NetworkId == 0)
             NetworkId = _nextNetworkId++;
     }
@@ -35,13 +41,16 @@ public partial class Bullet : RigidBody2D
         CollisionMask = 0;
         OwnerPlayer = owner;
         GlobalPosition = position;
+        _replicaTargetPosition = position;
+        _replicaUpdatedAt = Time.GetTicksMsec() / 1000.0;
         LinearVelocity = velocity;
     }
 
     public void ApplyReplicaState(Vector2 position, Vector2 velocity, Player? owner)
     {
         OwnerPlayer = owner;
-        GlobalPosition = GlobalPosition.Lerp(position, 0.65f);
+        _replicaTargetPosition = position;
+        _replicaUpdatedAt = Time.GetTicksMsec() / 1000.0;
         LinearVelocity = velocity;
     }
 
@@ -59,6 +68,37 @@ public partial class Bullet : RigidBody2D
             if (GodotObject.IsInstanceValid(this) && version == _ownerVersion && GodotObject.IsInstanceValid(ignoredPlayer))
                 RemoveCollisionExceptionWith(ignoredPlayer);
         };
+    }
+
+    public void FastForward(float seconds)
+    {
+        var duration = Mathf.Clamp(seconds, 0.0f, 0.1f);
+        if (IsReplica || duration <= 0.0f || LinearVelocity.LengthSquared() < 0.01f)
+            return;
+        var destination = GlobalPosition + LinearVelocity * duration;
+        var exclude = new Godot.Collections.Array<Rid> { GetRid() };
+        if (GodotObject.IsInstanceValid(OwnerPlayer))
+            exclude.Add(OwnerPlayer!.GetRid());
+        var query = PhysicsRayQueryParameters2D.Create(GlobalPosition, destination, CollisionMask, exclude);
+        query.CollideWithAreas = false;
+        var hit = GetWorld2D().DirectSpaceState.IntersectRay(query);
+        if (hit.Count == 0)
+        {
+            GlobalPosition = destination;
+            return;
+        }
+
+        GlobalPosition = hit["position"].AsVector2();
+        var collider = hit["collider"].AsGodotObject();
+        if (GodotObject.IsInstanceValid(collider) && collider is Player target)
+        {
+            if (target.TryParry(this, LinearVelocity))
+                return;
+            target.TakeHit(Damage, LinearVelocity);
+            QueueFree();
+            return;
+        }
+        SpawnImpact(hit["normal"].AsVector2());
     }
 
     public bool Parry(Player player, Vector2 incomingVelocity)
@@ -79,6 +119,16 @@ public partial class Bullet : RigidBody2D
             QueueFree();
             return;
         }
+        if (IsReplica)
+        {
+            var sinceUpdate = Math.Clamp(Time.GetTicksMsec() / 1000.0 - _replicaUpdatedAt, 0.0, 0.1);
+            var target = _replicaTargetPosition + LinearVelocity * (float)sinceUpdate;
+            GlobalPosition = GlobalPosition.DistanceTo(target) > 180.0f
+                ? target
+                : GlobalPosition.Lerp(target, Mathf.Min((float)delta * 22.0f, 1.0f));
+        }
+        if (_headless)
+            return;
         _trail.AddPoint(GlobalPosition);
         if (_trail.GetPointCount() > MaxTrailPoints)
             _trail.RemovePoint(0);
@@ -114,7 +164,15 @@ public partial class Bullet : RigidBody2D
 
     private void SpawnImpact(Vector2 normal)
     {
+        GetTree().CallGroup("network_effects", "record_bullet_impact", GlobalPosition, normal);
         GetTree().CallGroup("camera_shake", "shake", 4.0f, 0.1f);
+        if (!_headless)
+            SpawnImpactEffect(GetTree().CurrentScene, GlobalPosition, normal);
+        QueueFree();
+    }
+
+    public static void SpawnImpactEffect(Node parent, Vector2 position, Vector2 normal)
+    {
         var impact = new CpuParticles2D
         {
             Amount = 10,
@@ -130,11 +188,9 @@ public partial class Bullet : RigidBody2D
             ScaleAmountMax = 5.0f,
             Color = new Color(1.0f, 0.55f, 0.15f, 0.9f)
         };
-        var impactParent = GetParent() ?? GetTree().CurrentScene;
-        impactParent.AddChild(impact);
-        impact.GlobalPosition = GlobalPosition + normal * 6.0f;
+        parent.AddChild(impact);
+        impact.GlobalPosition = position + normal * 6.0f;
         impact.Emitting = true;
-        GetTree().CreateTimer(impact.Lifetime).Timeout += impact.QueueFree;
-        QueueFree();
+        parent.GetTree().CreateTimer(impact.Lifetime).Timeout += impact.QueueFree;
     }
 }

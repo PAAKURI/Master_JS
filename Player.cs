@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Godot;
 
 public partial class Player : CharacterBody2D
@@ -6,6 +7,7 @@ public partial class Player : CharacterBody2D
 	[Signal] public delegate void DiedEventHandler(int playerId);
 
 	private static readonly PackedScene BulletScene = GD.Load<PackedScene>("res://Scene/bullet.tscn");
+	private static readonly AudioStream ShootSound = GD.Load<AudioStream>("res://resources/shoot.mp3");
 	private static readonly Vector2 ArenaSize = new(1920.0f, 1080.0f);
 
 	private const float Speed = 400.0f;
@@ -21,6 +23,7 @@ public partial class Player : CharacterBody2D
 	private const float ShootInterval = 0.7f;
 	private const float ReloadDuration = 3.0f;
 	private const float RecoilStrength = 145.0f;
+	private const float PlayerPushSpeed = 200.0f;
 	private const float ArenaMargin = 48.0f;
 	private const float HitInvulnerability = 0.15f;
 	private const float ParryStartup = 0.05f;
@@ -35,6 +38,11 @@ public partial class Player : CharacterBody2D
 	private static readonly float LegMaxRotation = Mathf.DegToRad(130.0f);
 	private const int MaxHealth = 100;
 	private const int MagazineSize = 4;
+	private const double ReplicaInterpolationDelay = 0.1;
+	private const double ReplicaExtrapolationLimit = 0.1;
+	private const float PredictionDeadZone = 6.0f;
+	private const float PredictionFloorVerticalDeadZone = 12.0f;
+	private const float PredictionSnapDistance = 120.0f;
 
 	private enum ParryState { Idle, Startup, Active, Recovery }
 
@@ -42,9 +50,12 @@ public partial class Player : CharacterBody2D
 	[Export] public bool IsBot { get; set; }
 	[Export] public bool PreviewMode { get; set; }
 	[Export] public Color PlayerColor { get; set; } = new(0.2f, 0.65f, 1.0f);
+	[Export(PropertyHint.Range, "1.0,3.0,0.1")] public float SpriteGlowIntensity { get; set; } = 1.8f;
 
 	public bool UsesRemoteInput { get; set; }
 	public bool IsNetworkReplica { get; set; }
+	public bool IsPredictedLocal { get; set; }
+	public uint LastProcessedInputSequence { get; private set; }
 
 	public int Health { get; private set; } = MaxHealth;
 	private int _ammo = MagazineSize;
@@ -57,6 +68,7 @@ public partial class Player : CharacterBody2D
 			UpdateAmmoDisplay();
 		}
 	}
+	public uint ShootSequence { get; private set; }
 	public bool IsReloading => _reloadTime > 0.0f;
 	public float ReloadProgress => IsReloading ? 1.0f - _reloadTime / ReloadDuration : 0.0f;
 	public float ParryCooldownRatio => _parryCooldown / ParryCooldownDuration;
@@ -84,10 +96,21 @@ public partial class Player : CharacterBody2D
 	private ParryState _parryState;
 	private Player? _target;
 	private PlayerCommand _remoteCommand = PlayerCommand.Neutral;
+	private readonly Queue<PlayerCommand> _commandQueue = new();
+	private readonly List<PredictionSample> _predictionHistory = new();
+	private readonly List<ReplicaSample> _replicaSamples = new();
+	private uint _lastQueuedInputSequence;
+	private float _inputLatencyCompensation;
+	private Vector2 _predictionCorrection;
 	private Vector2 _replicaPosition;
 	private Vector2 _replicaVelocity;
 	private bool _replicaOnFloor;
 	private bool _replicaOnWall;
+	private Color _spriteGlowColor;
+	private bool _visualsEnabled = true;
+
+	private readonly record struct PredictionSample(uint Sequence, Vector2 Position, Vector2 Velocity);
+	private readonly record struct ReplicaSample(double ServerTime, double ReceivedTime, Vector2 Position, Vector2 Velocity);
 
 	private CollisionShape2D _bodyCollision = null!;
 	private Area2D _parryArea = null!;
@@ -102,7 +125,6 @@ public partial class Player : CharacterBody2D
 	private EyeBall _rightEye = null!;
 	private Polygon2D _leftEyeVisual = null!;
 	private Polygon2D _rightEyeVisual = null!;
-	private Color _activeBodyColor;
 	private Vector2 _leftLegRestPosition;
 	private Vector2 _rightLegRestPosition;
 	private float _leftLegAngularVelocity;
@@ -111,11 +133,15 @@ public partial class Player : CharacterBody2D
 	private ProgressBar _reloadBar = null!;
 	private TextureProgressBar _parryCooldownIndicator = null!;
 	private Polygon2D[] _ammoIndicators = null!;
+	private AudioStreamPlayer _shootAudio = null!;
 
 	public override void _Ready()
 	{
 		if (!PreviewMode)
+		{
 			AddToGroup("players");
+			CollisionMask |= CollisionLayer;
+		}
 		_bodyCollision = GetNode<CollisionShape2D>("CollisionShape2D");
 		_parryArea = GetNode<Area2D>("ParryArea");
 		_parryCollision = GetNode<CollisionShape2D>("ParryArea/CollisionShape2D");
@@ -138,6 +164,8 @@ public partial class Player : CharacterBody2D
 		_healthBar = GetNode<ProgressBar>("HealthBar");
 		_reloadBar = GetNode<ProgressBar>("ReloadBar");
 		_parryCooldownIndicator = GetNode<TextureProgressBar>("ParryCooldown");
+		_shootAudio = new AudioStreamPlayer { Stream = ShootSound };
+		AddChild(_shootAudio);
 		_ammoIndicators = new[]
 		{
 			GetNode<Polygon2D>("AmmoDisplay/Bullet1"),
@@ -145,8 +173,8 @@ public partial class Player : CharacterBody2D
 			GetNode<Polygon2D>("AmmoDisplay/Bullet3"),
 			GetNode<Polygon2D>("AmmoDisplay/Bullet4")
 		};
-		_activeBodyColor = PlayerColor;
-		_bodyVisual.Modulate = _activeBodyColor;
+		_spriteGlowColor = new Color(PlayerColor.R * SpriteGlowIntensity, PlayerColor.G * SpriteGlowIntensity, PlayerColor.B * SpriteGlowIntensity, PlayerColor.A);
+		_bodyVisual.Modulate = _spriteGlowColor;
 		GetNode<Node2D>("AmmoDisplay").Modulate = PlayerColor;
 		_parryVisual.Color = new Color(PlayerColor.R, PlayerColor.G, PlayerColor.B, 0.34f);
 		_healthBar.AddThemeStyleboxOverride("fill", new StyleBoxFlat { BgColor = PlayerColor });
@@ -178,13 +206,18 @@ public partial class Player : CharacterBody2D
 	public void ApplyCustomization(CharacterLook look)
 	{
 		look = look.Sanitized();
-		_activeBodyColor = look.BodyColor;
-		_bodyVisual.Modulate = _activeBodyColor;
-		GetNode<Node2D>("AmmoDisplay").Modulate = _activeBodyColor;
-		_parryVisual.Color = new Color(_activeBodyColor.R, _activeBodyColor.G, _activeBodyColor.B, 0.34f);
-		_healthBar.AddThemeStyleboxOverride("fill", new StyleBoxFlat { BgColor = _activeBodyColor });
-		_reloadBar.AddThemeStyleboxOverride("fill", new StyleBoxFlat { BgColor = _activeBodyColor });
-		_parryCooldownIndicator.TintProgress = _activeBodyColor;
+		PlayerColor = look.BodyColor;
+		_spriteGlowColor = new Color(
+			look.BodyColor.R * SpriteGlowIntensity,
+			look.BodyColor.G * SpriteGlowIntensity,
+			look.BodyColor.B * SpriteGlowIntensity,
+			look.BodyColor.A);
+		_bodyVisual.Modulate = _spriteGlowColor;
+		GetNode<Node2D>("AmmoDisplay").Modulate = look.BodyColor;
+		_parryVisual.Color = new Color(look.BodyColor.R, look.BodyColor.G, look.BodyColor.B, 0.34f);
+		_healthBar.AddThemeStyleboxOverride("fill", new StyleBoxFlat { BgColor = look.BodyColor });
+		_reloadBar.AddThemeStyleboxOverride("fill", new StyleBoxFlat { BgColor = look.BodyColor });
+		_parryCooldownIndicator.TintProgress = look.BodyColor;
 
 		var eyePolygon = CharacterCustomization.BuildEyePolygon(look.EyeShape);
 		_leftEyeVisual.Polygon = eyePolygon;
@@ -213,14 +246,15 @@ public partial class Player : CharacterBody2D
 		var delta = (float)deltaValue;
 		if (IsNetworkReplica)
 		{
-			GlobalPosition = GlobalPosition.Lerp(_replicaPosition, Mathf.Min(delta * 18.0f, 1.0f));
-			Velocity = _replicaVelocity;
+			UpdateReplica();
 			UpdateLegs(delta);
 			return;
 		}
 
+		ApplyPredictionCorrection(delta);
 		TickTimers(delta);
 		UpdateParry(delta);
+		ReadActions(delta, out var direction, out var jumpPressed, out var downPressed, out var upPressed, out var shootPressed, out var parryPressed);
 		UpdateAim();
 
 		if (!InputEnabled || !IsAlive)
@@ -229,22 +263,15 @@ public partial class Player : CharacterBody2D
 			MoveAndSlide();
 			KeepInsideArena();
 			UpdateLegs(delta);
+			RecordPrediction();
 			return;
 		}
-
-		float direction;
-		bool jumpPressed;
-		bool downPressed;
-		bool upPressed;
-		bool shootPressed;
-		bool parryPressed;
-		ReadActions(delta, out direction, out jumpPressed, out downPressed, out upPressed, out shootPressed, out parryPressed);
 
 		if (jumpPressed)
 			_jumpBuffer = JumpBufferDuration;
 		if (parryPressed)
 			StartParry();
-		if (shootPressed)
+		if (shootPressed && !IsPredictedLocal)
 			TryShoot();
 
 		var crouching = IsOnFloor() && downPressed;
@@ -287,13 +314,25 @@ public partial class Player : CharacterBody2D
 		}
 
 		MoveAndSlide();
+		PushPlayers(delta);
 		KeepInsideArena();
 		UpdateLegs(delta);
+		RecordPrediction();
 	}
 
 	public void SetTarget(Player target) => _target = target;
 
-	public void SetRemoteCommand(PlayerCommand command) => _remoteCommand = command.Sanitized();
+	public void EnqueueCommand(PlayerCommand command)
+	{
+		var sanitized = command.Sanitized();
+		if (sanitized.Sequence != 0 && _lastQueuedInputSequence != 0 && !NetworkProtocol.IsNewer(sanitized.Sequence, _lastQueuedInputSequence))
+			return;
+		if (sanitized.Sequence != 0)
+			_lastQueuedInputSequence = sanitized.Sequence;
+		_commandQueue.Enqueue(sanitized);
+		while (_commandQueue.Count > 32)
+			_commandQueue.Dequeue();
+	}
 
 	public PlayerCommand CaptureLocalCommand()
 	{
@@ -303,26 +342,61 @@ public partial class Player : CharacterBody2D
 			Input.IsActionJustPressed("jump"),
 			Input.IsActionPressed("move_down"),
 			Input.IsActionPressed("move_up"),
-			Input.IsMouseButtonPressed(MouseButton.Left),
+			Input.IsActionPressed("shoot") || Input.IsActionJustPressed("shoot"),
 			Input.IsActionJustPressed("parry"),
 			aim.LengthSquared() > 1.0f ? aim.Normalized() : AimDirection);
 	}
 
-	public void ApplyNetworkState(Vector2 position, Vector2 velocity, Vector2 aim, int health, int ammo, float reloadTime, float parryCooldown, bool alive, bool onFloor, bool onWall)
+	public void ApplyNetworkState(uint serverTick, Vector2 position, Vector2 velocity, Vector2 aim, int health, int ammo, float reloadTime, float parryCooldown, bool alive, bool onFloor, bool onWall)
 	{
 		_replicaPosition = position;
 		_replicaVelocity = velocity;
-		AimDirection = aim.LengthSquared() > 0.0001f ? aim.Normalized() : AimDirection;
-		Health = Mathf.Clamp(health, 0, MaxHealth);
-		Ammo = Mathf.Clamp(ammo, 0, MagazineSize);
-		_reloadTime = Mathf.Max(reloadTime, 0.0f);
-		_parryCooldown = Mathf.Max(parryCooldown, 0.0f);
-		IsAlive = alive;
+		ApplyAuthoritativeFields(aim, health, ammo, reloadTime, parryCooldown, alive);
 		_replicaOnFloor = onFloor;
 		_replicaOnWall = onWall;
-		_healthBar.Value = Health;
-		if (GlobalPosition.DistanceTo(position) > 180.0f)
+		if (_replicaSamples.Count > 0 && _replicaSamples[^1].Position.DistanceTo(position) > 240.0f)
+			_replicaSamples.Clear();
+		var now = Time.GetTicksMsec() / 1000.0;
+		_replicaSamples.Add(new ReplicaSample(serverTick / 60.0, now, position, velocity));
+		if (_replicaSamples.Count > 32)
+			_replicaSamples.RemoveAt(0);
+		if (_replicaSamples.Count == 1 || GlobalPosition.DistanceTo(position) > 240.0f)
 			GlobalPosition = position;
+	}
+
+	public void ReconcileNetworkState(uint acknowledgedSequence, Vector2 position, Vector2 velocity, Vector2 aim, int health, int ammo, float reloadTime, float parryCooldown, bool alive, bool onFloor, bool onWall)
+	{
+		ApplyAuthoritativeFields(aim, health, ammo, reloadTime, parryCooldown, alive);
+		_replicaOnFloor = onFloor;
+		_replicaOnWall = onWall;
+		var predictedPosition = GlobalPosition;
+		for (var index = 0; index < _predictionHistory.Count; index++)
+		{
+			if (_predictionHistory[index].Sequence != acknowledgedSequence)
+				continue;
+			predictedPosition = _predictionHistory[index].Position;
+			break;
+		}
+		_predictionHistory.RemoveAll(sample => sample.Sequence == acknowledgedSequence || NetworkProtocol.IsNewer(acknowledgedSequence, sample.Sequence));
+		var error = position - predictedPosition;
+		if (onFloor && IsOnFloor() && Mathf.Abs(error.Y) < PredictionFloorVerticalDeadZone)
+			error = new Vector2(error.X, 0.0f);
+		if (error.Length() > PredictionSnapDistance)
+		{
+			GlobalPosition += error;
+			_predictionCorrection = Vector2.Zero;
+			Velocity = velocity;
+		}
+		else if (error.Length() > PredictionDeadZone)
+		{
+			_predictionCorrection = error;
+			if (Velocity.DistanceTo(velocity) > 300.0f)
+				Velocity = Velocity.Lerp(velocity, 0.5f);
+		}
+		else
+		{
+			_predictionCorrection = Vector2.Zero;
+		}
 	}
 
 	public void ResetForRound(Vector2 spawnPosition)
@@ -348,6 +422,14 @@ public partial class Player : CharacterBody2D
 		_healthBar.Value = Health;
 		_replicaPosition = spawnPosition;
 		_replicaVelocity = Vector2.Zero;
+		_commandQueue.Clear();
+		_predictionHistory.Clear();
+		_replicaSamples.Clear();
+		_remoteCommand = PlayerCommand.Neutral;
+		_lastQueuedInputSequence = 0;
+		_inputLatencyCompensation = 0.0f;
+		LastProcessedInputSequence = 0;
+		_predictionCorrection = Vector2.Zero;
 		foreach (var child in GetChildren())
 			if (child is EyeBall eye)
 				eye.CallDeferred(EyeBall.MethodName.SnapToAnchor);
@@ -384,7 +466,7 @@ public partial class Player : CharacterBody2D
 		GetTree().CallGroup("camera_shake", "shake", 10.0f, 0.18f);
 		GetTree().CallGroup("damage_overlay", "show_damage", PlayerId);
 		_bodyVisual.Modulate = Colors.White;
-		CreateTween().TweenProperty(_bodyVisual, "modulate", _activeBodyColor, HitInvulnerability);
+		CreateTween().TweenProperty(_bodyVisual, "modulate", _spriteGlowColor, HitInvulnerability);
 		if (Health <= 0)
 			Kill();
 		return true;
@@ -399,7 +481,7 @@ public partial class Player : CharacterBody2D
 
 		GetTree().CallGroup("camera_shake", "shake", 7.0f, 0.12f);
 		_bodyVisual.Modulate = new Color(0.6f, 1.0f, 1.0f);
-		CreateTween().TweenProperty(_bodyVisual, "modulate", _activeBodyColor, 0.15);
+		CreateTween().TweenProperty(_bodyVisual, "modulate", _spriteGlowColor, 0.15);
 		return true;
 	}
 
@@ -422,14 +504,25 @@ public partial class Player : CharacterBody2D
 	{
 		if (UsesRemoteInput)
 		{
-			var command = _remoteCommand;
-			direction = command.Move;
-			jump = command.Jump;
-			down = command.Down;
-			up = command.Up;
-			shoot = command.Shoot;
-			parry = command.Parry;
-			_remoteCommand = command with { Jump = false, Parry = false };
+			var latest = _remoteCommand;
+			jump = false;
+			parry = false;
+			shoot = latest.Shoot;
+			while (_commandQueue.Count > 0)
+			{
+				var command = _commandQueue.Dequeue();
+				jump |= command.Jump;
+				parry |= command.Parry;
+				shoot |= command.Shoot;
+				latest = command;
+			}
+			_remoteCommand = latest with { Jump = false, Parry = false };
+			direction = latest.Move;
+			down = latest.Down;
+			up = latest.Up;
+			_inputLatencyCompensation = Mathf.Clamp(latest.LatencyCompensation, 0.0f, 0.1f);
+			if (latest.Sequence != 0)
+				LastProcessedInputSequence = latest.Sequence;
 			return;
 		}
 
@@ -439,7 +532,7 @@ public partial class Player : CharacterBody2D
 			jump = Input.IsActionJustPressed("jump");
 			down = Input.IsActionPressed("move_down");
 			up = Input.IsActionPressed("move_up");
-			shoot = Input.IsMouseButtonPressed(MouseButton.Left);
+			shoot = Input.IsActionPressed("shoot") || Input.IsActionJustPressed("shoot");
 			parry = Input.IsActionJustPressed("parry");
 			return;
 		}
@@ -463,6 +556,87 @@ public partial class Player : CharacterBody2D
 			parry = true;
 			_botParryDelay = 0.35f;
 		}
+	}
+
+	public void SetVisualsEnabled(bool enabled)
+	{
+		_visualsEnabled = enabled;
+		Visible = enabled;
+		SetProcess(enabled);
+		foreach (var child in GetChildren())
+			if (child is EyeBall eye)
+			{
+				eye.Freeze = !enabled;
+				eye.Sleeping = !enabled;
+			}
+	}
+
+	private void ApplyAuthoritativeFields(Vector2 aim, int health, int ammo, float reloadTime, float parryCooldown, bool alive)
+	{
+		AimDirection = aim.IsFinite() && aim.LengthSquared() > 0.0001f ? aim.Normalized() : AimDirection;
+		Health = Mathf.Clamp(health, 0, MaxHealth);
+		Ammo = Mathf.Clamp(ammo, 0, MagazineSize);
+		_reloadTime = float.IsFinite(reloadTime) ? Mathf.Max(reloadTime, 0.0f) : 0.0f;
+		_parryCooldown = float.IsFinite(parryCooldown) ? Mathf.Max(parryCooldown, 0.0f) : 0.0f;
+		IsAlive = alive;
+		if (IsNetworkReplica)
+		{
+			var parryElapsed = ParryCooldownDuration - _parryCooldown;
+			_parryVisual.Visible = alive && parryElapsed >= ParryStartup && parryElapsed < ParryStartup + ParryActive;
+		}
+		_healthBar.Value = Health;
+	}
+
+	private void ApplyPredictionCorrection(float delta)
+	{
+		if (!IsPredictedLocal || _predictionCorrection.LengthSquared() < 0.01f)
+			return;
+		var step = _predictionCorrection * Mathf.Min(delta * 10.0f, 0.5f);
+		GlobalPosition += step;
+		_predictionCorrection -= step;
+	}
+
+	private void RecordPrediction()
+	{
+		if (!IsPredictedLocal || LastProcessedInputSequence == 0)
+			return;
+		if (_predictionHistory.Count > 0 && _predictionHistory[^1].Sequence == LastProcessedInputSequence)
+			_predictionHistory[^1] = new PredictionSample(LastProcessedInputSequence, GlobalPosition, Velocity);
+		else
+			_predictionHistory.Add(new PredictionSample(LastProcessedInputSequence, GlobalPosition, Velocity));
+		if (_predictionHistory.Count > 180)
+			_predictionHistory.RemoveAt(0);
+	}
+
+	private void UpdateReplica()
+	{
+		if (_replicaSamples.Count == 0)
+			return;
+		var latest = _replicaSamples[^1];
+		var now = Time.GetTicksMsec() / 1000.0;
+		var targetTime = latest.ServerTime + (now - latest.ReceivedTime) - ReplicaInterpolationDelay;
+		while (_replicaSamples.Count > 2 && _replicaSamples[1].ServerTime <= targetTime)
+			_replicaSamples.RemoveAt(0);
+
+		var targetPosition = latest.Position;
+		var targetVelocity = latest.Velocity;
+		if (_replicaSamples.Count >= 2 && targetTime <= _replicaSamples[1].ServerTime)
+		{
+			var from = _replicaSamples[0];
+			var to = _replicaSamples[1];
+			var duration = Math.Max(to.ServerTime - from.ServerTime, 0.0001);
+			var weight = Mathf.Clamp((float)((targetTime - from.ServerTime) / duration), 0.0f, 1.0f);
+			targetPosition = from.Position.Lerp(to.Position, weight);
+			targetVelocity = from.Velocity.Lerp(to.Velocity, weight);
+		}
+		else
+		{
+			var extrapolation = Math.Clamp(targetTime - latest.ServerTime, 0.0, ReplicaExtrapolationLimit);
+			targetPosition = latest.Position + latest.Velocity * (float)extrapolation;
+		}
+
+		GlobalPosition = targetPosition;
+		Velocity = targetVelocity;
 	}
 
 	private bool HasIncomingBullet()
@@ -505,6 +679,8 @@ public partial class Player : CharacterBody2D
 
 	private void UpdateLegs(float delta)
 	{
+		if (!_visualsEnabled)
+			return;
 		var onFloor = IsNetworkReplica ? _replicaOnFloor : IsOnFloor();
 		var onWall = IsNetworkReplica ? _replicaOnWall : IsOnWall();
 		if (onFloor || onWall)
@@ -576,6 +752,18 @@ public partial class Player : CharacterBody2D
 		TakeHit(50, inward);
 	}
 
+	private void PushPlayers(float delta)
+	{
+		if (!CombatEnabled)
+			return;
+		for (var index = 0; index < GetSlideCollisionCount(); index++)
+		{
+			var collision = GetSlideCollision(index);
+			if (collision.GetCollider() is Player other && other.CombatEnabled)
+				other.MoveAndCollide(-collision.GetNormal() * PlayerPushSpeed * delta);
+		}
+	}
+
 	private void TryShoot()
 	{
 		if (_shootCooldown > 0.0f || IsReloading || _parryState == ParryState.Startup || _parryState == ParryState.Active)
@@ -592,16 +780,33 @@ public partial class Player : CharacterBody2D
 		bullet.GlobalPosition = _mouth.GlobalPosition;
 		bullet.SetOwnerPlayer(this);
 		bullet.LinearVelocity = AimDirection * BulletSpeed;
-		var headPosition = _head.Position;
-		var headTween = CreateTween();
-		headTween.TweenProperty(_head, "position", headPosition + Vector2.Up * 8.0f, 0.05);
-		headTween.TweenProperty(_head, "position", headPosition, 0.08);
+		bullet.FastForward(_inputLatencyCompensation);
+		ShootSequence++;
+		PlayShootAnimation();
 		Velocity -= AimDirection * RecoilStrength;
 		Ammo--;
 		_shootCooldown = ShootInterval;
 		GetTree().CallGroup("camera_shake", "shake", 2.0f, 0.06f);
 		if (Ammo <= 0)
 			BeginReload();
+	}
+
+	public void PlayShootAnimation()
+	{
+		_shootAudio.Play();
+		var headPosition = _head.Position;
+		var headTween = CreateTween();
+		headTween.TweenProperty(_head, "position", headPosition + Vector2.Up * 8.0f, 0.05);
+		headTween.TweenProperty(_head, "position", headPosition, 0.08);
+	}
+
+	public void ApplyNetworkShootSequence(uint sequence)
+	{
+		if (sequence == ShootSequence)
+			return;
+		ShootSequence = sequence;
+		if (sequence != 0)
+			PlayShootAnimation();
 	}
 
 	private void BeginReload()
@@ -646,8 +851,9 @@ public partial class Player : CharacterBody2D
 
 	private void SetParryActive(bool active)
 	{
-		_parryArea.Monitoring = active;
-		_parryCollision.SetDeferred(CollisionShape2D.PropertyName.Disabled, !active);
+		var authoritativeActive = active && CombatEnabled;
+		_parryArea.Monitoring = authoritativeActive;
+		_parryCollision.SetDeferred(CollisionShape2D.PropertyName.Disabled, !authoritativeActive);
 		_parryVisual.Visible = active;
 	}
 

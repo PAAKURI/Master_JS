@@ -9,7 +9,7 @@ public partial class GameManager : Node2D
     private const float RoundEndDuration = 3.0f;
     private const int WinsRequired = 2;
     private const float SnapshotInterval = 1.0f / 30.0f;
-    private const int SnapshotVersion = 1;
+    private const int SnapshotVersion = 2;
 
     private enum GameState { Countdown, Playing, RoundEnd, MatchEnd, Result }
 
@@ -368,6 +368,8 @@ public partial class GameManager : Node2D
         writer.Write(player.ReloadSeconds);
         writer.Write(player.ParryCooldownSeconds);
         writer.Write(player.IsAlive);
+        writer.Write(player.OnFloor);
+        writer.Write(player.OnWall);
     }
 
     private static void WriteVector(BinaryWriter writer, Vector2 value)
@@ -427,7 +429,9 @@ public partial class GameManager : Node2D
         var reload = reader.ReadSingle();
         var parryCooldown = reader.ReadSingle();
         var alive = reader.ReadBoolean();
-        player.ApplyNetworkState(position, velocity, aim, health, ammo, reload, parryCooldown, alive);
+        var onFloor = reader.ReadBoolean();
+        var onWall = reader.ReadBoolean();
+        player.ApplyNetworkState(position, velocity, aim, health, ammo, reload, parryCooldown, alive, onFloor, onWall);
     }
 
     private void ReadBullets(BinaryReader reader)

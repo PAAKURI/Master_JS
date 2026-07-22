@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dda4ndsuqn7dm"
-path="res://.godot/imported/player_head.svg-38e4e5636ef1bf42566df14a5ed19038.ctex"
+uid="uid://cx4yj3uqn4y5g"
+path="res://.godot/imported/parry_cooldown.svg-13e3f1694f44ee919d1a40b4efbd65c0.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://resources/player_head.svg"
-dest_files=["res://.godot/imported/player_head.svg-38e4e5636ef1bf42566df14a5ed19038.ctex"]
+source_file="res://resources/parry_cooldown.svg"
+dest_files=["res://.godot/imported/parry_cooldown.svg-13e3f1694f44ee919d1a40b4efbd65c0.ctex"]
 
 [params]
 
@@ -23,7 +23,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""
@@ -38,6 +38,6 @@ process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
 detect_3d/compress_to=1
-svg/scale=4.0
+svg/scale=1.0
 editor/scale_with_editor_scale=false
 editor/convert_colors_with_editor_theme=false
